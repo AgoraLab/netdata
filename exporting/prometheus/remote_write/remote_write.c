@@ -337,13 +337,11 @@ int format_variable_prometheus_remote_write(struct instance *instance, RRDHOST *
         .now = now_realtime_sec(),
     }
 
-    foreach_host_variable_callback(host, format_variable_prometheus_remote_write_callback, &opt)
-
-    return 0
+    return foreach_host_variable_callback(host, format_variable_prometheus_remote_write_callback, &opt);
 }
 
 int format_variable_prometheus_remote_write_callback(RRDVAR *rv, void *data) {
-    struct host_variables_callback_options *opts = data;
+    struct prometheus_remote_write_variables_callback_options *opts = data;
     RRDHOST *host = opts->host;
     struct instance *instance = opts->instance;
     struct simple_connector_data *simple_connector_data =
@@ -358,6 +356,7 @@ int format_variable_prometheus_remote_write_callback(RRDVAR *rv, void *data) {
     snprintf(name, PROMETHEUS_LABELS_MAX, "%s_%s%s", instance->config.prefix, context, suffix);
     add_variable(connector_specific_data->write_request, name, 
         (host == localhost) ? instance->config.hostname : host->hostname, rv->value, rv->last_updated * MSEC_PER_SEC);
+    return 0;
 }
 
 /**
