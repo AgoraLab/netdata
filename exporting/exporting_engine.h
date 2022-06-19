@@ -47,7 +47,7 @@ extern const char *global_exporting_prefix;
      (instance->config.options & EXPORTING_OPTION_SEND_AUTOMATIC_LABELS &&                                             \
       label_source & RRDLABEL_SRC_AUTO))
 
-#define should_send_variable(instance)  (instance->config.opetion & EXPORTING_OPTION_SEND_VARIABLE)
+#define should_send_variable(instance)  (instance->config.options & EXPORTING_OPTION_SEND_VARIABLE)
 
 typedef enum exporting_connector_types {
     EXPORTING_CONNECTOR_TYPE_UNKNOWN,                 // Invalid type

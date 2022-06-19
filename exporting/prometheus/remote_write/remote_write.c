@@ -333,7 +333,6 @@ int format_variable_prometheus_remote_write(struct instance *instance, RRDHOST *
 {
     struct prometheus_remote_write_variables_callback_options opt = {
         .host = host,
-        .prefix = instance->config.prefix,
         .instance = instance,
         .now = now_realtime_sec(),
     }
@@ -351,7 +350,6 @@ int format_variable_prometheus_remote_write_callback(RRDVAR *rv, void *data) {
         (struct simple_connector_data *)instance->connector_specific_data;
     struct prometheus_remote_write_specific_data *connector_specific_data =
         (struct prometheus_remote_write_specific_data *)simple_connector_data->connector_specific_data;
-
 
     char name[PROMETHEUS_LABELS_MAX + 1];
     char dimension[PROMETHEUS_ELEMENT_MAX + 1];

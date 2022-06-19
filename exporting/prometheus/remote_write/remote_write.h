@@ -15,7 +15,6 @@ struct prometheus_remote_write_variables_callback_options {
     RRDHOST *host;
     time_t now;
     struct instance *instance;
-    char name[PROMETHEUS_VARIABLE_MAX + 1];
 };
 
 int init_prometheus_remote_write_instance(struct instance *instance);

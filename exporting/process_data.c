@@ -249,11 +249,6 @@ void metric_formatting(struct engine *engine, RRDDIM *rd)
  */
 void variable_formatting(struct engine *engine, RRDHOST *host)
 {
-    struct host_variables_callback_options opts = {
-        .host = host,
-        .prefix = prefix,
-        .now = now_realtime_sec()
-    };
     for (struct instance *instance = engine->instance_root; instance; instance = instance->next) {
         if (instance->scheduled && !instance->skip_host && should_send_variable(instance)) {
             if (instance->variable_formatting && instance->variable_formatting(instance, host) != 0){ 
