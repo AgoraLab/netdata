@@ -63,6 +63,13 @@ int setup_rrdhost()
     rd->collections_counter++;
     rd->next = NULL;
 
+    long double variable_value = 2.125;
+    RRDVAR *rv = rrdvar_custom_host_variable_create(localhost, "variable_name");
+    rrdvar_custom_host_variable_set(localhost, rv, &variable_value);
+
+    st->variables = calloc(1, sizeof(RRDSETVAR));
+    st->variables->variable;
+
     rd->state = calloc(1, sizeof(*rd->state));
     rd->state->query_ops.oldest_time = __mock_rrddim_query_oldest_time;
     rd->state->query_ops.latest_time = __mock_rrddim_query_latest_time;

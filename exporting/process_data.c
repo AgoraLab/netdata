@@ -242,6 +242,32 @@ void metric_formatting(struct engine *engine, RRDDIM *rd)
 }
 
 /**
+ * Format metric for every connector instance's buffer
+ *
+ * @param engine an engine data structure.
+ * @param host a data collecting host.
+ */
+void variable_formatting(struct engine *engine, RRDHOST *host)
+{
+    struct host_variables_callback_options opts = {
+        .host = host,
+        .prefix = prefix,
+        .now = now_realtime_sec()
+    };
+    for (struct instance *instance = engine->instance_root; instance; instance = instance->next) {
+        if (instance->scheduled && !instance->skip_host && should_send_variable(instance)) {
+            if (instance->variable_formatting && instance->variable_formatting(instance, host) != 0){ 
+                error("EXPORTING: cannot format variable for %s", instance->config.name);
+                disable_instance(instance);
+                continue;
+            }
+            // sum all variables as one metrics
+            instance->stats.buffered_metrics++;
+        }
+    }
+}
+
+/**
  * End chart formatting for every connector instance's buffer
  *
  * @param engine an engine data structure.
@@ -337,6 +363,8 @@ void prepare_buffers(struct engine *engine)
             end_chart_formatting(engine, st);
             rrdset_unlock(st);
         }
+
+        variable_formatting(engine, host);
 
         end_host_formatting(engine, host);
         rrdhost_unlock(host);

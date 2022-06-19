@@ -221,6 +221,16 @@ void __wrap_add_metric(
     check_expected(value);
     check_expected(timestamp);
 }
+
+void __wrap_add_variable(
+    void *write_request_p, const char *name, const char *instance, const double value, const int64_t timestamp)
+{
+    function_called();
+    check_expected_ptr(write_request_p);
+    check_expected_ptr(name);
+    check_expected(value);
+    check_expected(timestamp);
+}
 #endif // ENABLE_PROMETHEUS_REMOTE_WRITE
 
 #if HAVE_KINESIS

@@ -147,6 +147,11 @@ void __wrap_add_metric(
     void *write_request_p,
     const char *name, const char *chart, const char *family, const char *dimension,
     const char *instance, const double value, const int64_t timestamp);
+
+void __real_add_variable(
+       void *write_request_p, const char *name, const char *instance, const double value,const int64_t timestamp);
+void __wrap_add_variable(
+    void *write_request_p, const char *name, const char *instance, const double value,const int64_t timestamp);
 #endif /* ENABLE_PROMETHEUS_REMOTE_WRITE */
 
 #if HAVE_KINESIS

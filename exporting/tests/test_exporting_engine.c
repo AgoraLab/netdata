@@ -1275,6 +1275,33 @@ static void test_format_dimension_prometheus_remote_write(void **state)
     assert_int_equal(format_dimension_prometheus_remote_write(instance, rd), 0);
 }
 
+static void test_format_variable_prometheus_remote_write(void **state)
+{
+    struct engine *engine = *state;
+    struct instance *instance = engine->instance_root;
+
+    struct simple_connector_data *simple_connector_data = mallocz(sizeof(struct simple_connector_data *));
+    instance->connector_specific_data = simple_connector_data;
+    struct prometheus_remote_write_specific_data *connector_specific_data =
+        mallocz(sizeof(struct prometheus_remote_write_specific_data *));
+    simple_connector_data->connector_specific_data = (void *)connector_specific_data;
+    connector_specific_data->write_request = (void *)0xff;
+
+    RRDVAR *rv = calloc(1, sizeof(RRDVAR));
+
+    expect_function_call(__wrap_exporting_calculate_value_from_stored_data);
+    will_return(__wrap_exporting_calculate_value_from_stored_data, pack_storage_number(27, SN_DEFAULT_FLAGS));
+
+    expect_function_call(__wrap_add_variable);
+    expect_value(__wrap_add_variable, write_request_p, 0xff);
+    expect_string(__wrap_add_variable, name, "netdata_");
+    expect_string(__wrap_add_variable, instance, "test-host");
+    expect_value(__wrap_add_variable, value, 0x292932e0);
+    expect_value(__wrap_add_variable, timestamp, 15052 * MSEC_PER_SEC);
+
+    assert_int_equal(format_variable_prometheus_remote_write(instance, rv), 0);
+}
+
 static void test_format_batch_prometheus_remote_write(void **state)
 {
     struct engine *engine = *state;
@@ -1928,6 +1955,8 @@ int main(void)
             test_format_host_prometheus_remote_write, setup_initialized_engine, teardown_initialized_engine),
         cmocka_unit_test_setup_teardown(
             test_format_dimension_prometheus_remote_write, setup_initialized_engine, teardown_initialized_engine),
+        cmocka_unit_test_setup_teardown(
+            test_format_variable_prometheus_remote_write, setup_initialized_engine, teardown_initialized_engine),
         cmocka_unit_test_setup_teardown(
             test_format_batch_prometheus_remote_write, setup_initialized_engine, teardown_initialized_engine),
     };
