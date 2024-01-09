@@ -297,6 +297,8 @@ static inline void do_disk_space_stats(struct mountinfo *mi, int update_every) {
     static SIMPLE_PATTERN *excluded_filesystems = NULL;
     static SIMPLE_PATTERN *excluded_filesystems_inodes = NULL;
 
+    static int enable_record_excluded_mountpoints = -1;
+
     usec_t slow_timeout = MAX_STAT_USEC * update_every;
 
     int do_space, do_inodes;
@@ -327,11 +329,14 @@ static inline void do_disk_space_stats(struct mountinfo *mi, int update_every) {
             SIMPLE_PATTERN_EXACT,
             true);
 
+        enable_record_excluded_mountpoints = config_get_boolean_ondemand(CONFIG_SECTION_DISKSPACE, "enable record exclude mountpoints", CONFIG_BOOLEAN_YES);
+
         dict_mountpoints = dictionary_create_advanced(DICT_OPTION_NONE, &dictionary_stats_category_collectors, 0);
     }
 
-#ifdef NETDATA_SKIP_IF_NOT_COLLECT
-    if(unlikely(simple_pattern_matches(excluded_mountpoints, mi->mount_point))) {
+    if(unlikely(
+        (simple_pattern_matches(excluded_mountpoints, mi->mount_point) || simple_pattern_matches(excluded_filesystems, mi->filesystem)) &&
+        enable_record_excluded_mountpoints == CONFIG_BOOLEAN_NO)) {
         netdata_log_debug(D_COLLECTOR, "DISKSPACE: Skipping mount point '%s' (disk '%s', filesystem '%s', root '%s') because it is excluded by configuration.",
             mi->mount_point,
             disk,
@@ -339,7 +344,6 @@ static inline void do_disk_space_stats(struct mountinfo *mi, int update_every) {
             mi->root?mi->root:"");
         return;
     }
-#endif
 
     struct mount_point_metadata *m = dictionary_get(dict_mountpoints, mi->mount_point);
     if(unlikely(!m)) {

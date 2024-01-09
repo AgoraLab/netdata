@@ -179,6 +179,7 @@ static int name_disks_by_id = CONFIG_BOOLEAN_NO;
 static int global_bcache_priority_stats_update_every = 0; // disabled by default
 
 static int  global_enable_new_disks_detected_at_runtime = CONFIG_BOOLEAN_YES,
+        global_enable_record_excluded_disks = CONFIG_BOOLEAN_YES,
         global_enable_performance_for_physical_disks = CONFIG_BOOLEAN_AUTO,
         global_enable_performance_for_virtual_disks = CONFIG_BOOLEAN_AUTO,
         global_enable_performance_for_partitions = CONFIG_BOOLEAN_NO,
@@ -474,12 +475,11 @@ static void get_disk_config(struct disk *d) {
 
     if(def_enable != CONFIG_BOOLEAN_NO && (simple_pattern_matches(excluded_disks, d->device) || simple_pattern_matches(excluded_disks, d->disk)))
         def_enable = CONFIG_BOOLEAN_NO;
-#ifdef NETDATA_SKIP_IF_NOT_COLLECT
-    if(!def_enable) {
+
+    if(unlikely(!def_enable && global_enable_record_excluded_disks == CONFIG_BOOLEAN_NO)) {
         netdata_log_debug(D_COLLECTOR, "DISKSTAT: Skipping device: %s, disk: %s because it is excluded by configuration.", d->device, d->disk);
         return;
     }
-#endif
 
     char var_name[4096 + 1];
     snprintfz(var_name, 4096, CONFIG_SECTION_PLUGIN_PROC_DISKSTATS ":%s", d->disk);
@@ -888,6 +888,7 @@ int do_proc_diskstats(int update_every, usec_t dt) {
         globals_initialized = 1;
 
         global_enable_new_disks_detected_at_runtime = config_get_boolean(CONFIG_SECTION_PLUGIN_PROC_DISKSTATS, "enable new disks detected at runtime", global_enable_new_disks_detected_at_runtime);
+        global_enable_record_excluded_disks = config_get_boolean(CONFIG_SECTION_PLUGIN_PROC_DISKSTATS, "enable record exlueded disks", global_enable_record_excluded_disks);
         global_enable_performance_for_physical_disks = config_get_boolean_ondemand(CONFIG_SECTION_PLUGIN_PROC_DISKSTATS, "performance metrics for physical disks", global_enable_performance_for_physical_disks);
         global_enable_performance_for_virtual_disks = config_get_boolean_ondemand(CONFIG_SECTION_PLUGIN_PROC_DISKSTATS, "performance metrics for virtual disks", global_enable_performance_for_virtual_disks);
         global_enable_performance_for_partitions = config_get_boolean_ondemand(CONFIG_SECTION_PLUGIN_PROC_DISKSTATS, "performance metrics for partitions", global_enable_performance_for_partitions);
