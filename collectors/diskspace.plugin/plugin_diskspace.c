@@ -329,7 +329,7 @@ static inline void do_disk_space_stats(struct mountinfo *mi, int update_every) {
             SIMPLE_PATTERN_EXACT,
             true);
 
-        enable_record_excluded_mountpoints = config_get_boolean_ondemand(CONFIG_SECTION_DISKSPACE, "enable record exclude mountpoints", CONFIG_BOOLEAN_YES);
+        enable_record_excluded_mountpoints = config_get_boolean_ondemand(CONFIG_SECTION_DISKSPACE, "enable record excluded mountpoints", CONFIG_BOOLEAN_YES);
 
         dict_mountpoints = dictionary_create_advanced(DICT_OPTION_NONE, &dictionary_stats_category_collectors, 0);
     }
