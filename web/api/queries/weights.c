@@ -112,7 +112,7 @@ static void register_result(DICTIONARY *results, RRDHOST *host, RRDCONTEXT_ACQUI
 
     // we can use the pointer address or RMA as a unique key for each metric
     char buf[20 + 1];
-    ssize_t len = snprintfz(buf, 20, "%p", rma);
+    ssize_t len = snprintfz(buf, sizeof(buf) - 1, "%p", rma);
     dictionary_set_advanced(results, buf, len + 1, &t, sizeof(struct register_result), NULL);
 }
 
@@ -717,7 +717,7 @@ static inline struct dict_unique_name_units *dict_unique_name_units_add(DICTIONA
 
 static inline struct dict_unique_id_name *dict_unique_id_name_add(DICTIONARY *dict, const char *id, const char *name, ssize_t *max_id) {
     char key[1024 + 1];
-    snprintfz(key, 1024, "%s:%s", id, name);
+    snprintfz(key, sizeof(key) - 1, "%s:%s", id, name);
     struct dict_unique_id_name *dun = dictionary_set(dict, key, NULL, sizeof(struct dict_unique_id_name));
     if(!dun->existing) {
         dun->existing = true;
@@ -1806,7 +1806,7 @@ int web_api_v12_weights(BUFFER *wb, QUERY_WEIGHTS_REQUEST *qwr) {
             }
     };
 
-    if(!rrdr_relative_window_to_absolute(&qwr->after, &qwr->before, NULL, false))
+    if(!rrdr_relative_window_to_absolute_query(&qwr->after, &qwr->before, NULL, false))
         buffer_no_cacheable(wb);
     else
         buffer_cacheable(wb);
@@ -1823,7 +1823,7 @@ int web_api_v12_weights(BUFFER *wb, QUERY_WEIGHTS_REQUEST *qwr) {
         if(qwr->baseline_before <= API_RELATIVE_TIME_MAX)
             qwr->baseline_before += qwr->after;
 
-        rrdr_relative_window_to_absolute(&qwr->baseline_after, &qwr->baseline_before, NULL, false);
+        rrdr_relative_window_to_absolute_query(&qwr->baseline_after, &qwr->baseline_before, NULL, false);
 
         if (qwr->baseline_before <= qwr->baseline_after) {
             resp = HTTP_RESP_BAD_REQUEST;
@@ -1913,7 +1913,7 @@ int web_api_v12_weights(BUFFER *wb, QUERY_WEIGHTS_REQUEST *qwr) {
 
     if(qwd.interrupted) {
         error = "interrupted";
-        resp = HTTP_RESP_BACKEND_FETCH_FAILED;
+        resp = HTTP_RESP_CLIENT_CLOSED_REQUEST;
         goto cleanup;
     }
 
@@ -2047,7 +2047,7 @@ print("\nprob", prob)
 
 static int double_expect(double v, const char *str, const char *descr) {
     char buf[100 + 1];
-    snprintfz(buf, 100, "%0.6f", v);
+    snprintfz(buf, sizeof(buf) - 1, "%0.6f", v);
     int ret = strcmp(buf, str) ? 1 : 0;
 
     fprintf(stderr, "%s %s, expected %s, got %s\n", ret?"FAILED":"OK", descr, str, buf);

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifndef DBENGINE_CACHE_H
 #define DBENGINE_CACHE_H
 
@@ -71,8 +72,8 @@ struct pgc_statistics {
 
     PGC_CACHE_LINE_PADDING(3);
 
-    size_t entries;                 // all the entries (includes clean, dirty, host)
-    size_t size;                    // all the entries (includes clean, dirty, host)
+    size_t entries;                 // all the entries (includes clean, dirty, hot)
+    size_t size;                    // all the entries (includes clean, dirty, hot)
 
     size_t evicting_entries;
     size_t evicting_size;

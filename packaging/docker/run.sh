@@ -21,7 +21,7 @@ if [ ! "${DISABLE_TELEMETRY:-0}" -eq 0 ] ||
   touch /etc/netdata/.opt-out-from-anonymous-statistics
 fi
 
-chmod o+rX / # Needed to fix permissions issues in some cases.
+chmod o+rX / 2>/dev/null || echo "Unable to change permissions without errors."
 
 BALENA_PGID=$(stat -c %g /var/run/balena.sock 2>/dev/null || true)
 DOCKER_PGID=$(stat -c %g /var/run/docker.sock 2>/dev/null || true)
@@ -41,10 +41,37 @@ export DOCKER_HOST
 
 if [ -n "${PGID}" ]; then
   echo "Creating docker group ${PGID}"
-  addgroup -g "${PGID}" "docker" || echo >&2 "Could not add group docker with ID ${PGID}, its already there probably"
+  addgroup --gid "${PGID}" "docker" || echo >&2 "Could not add group docker with ID ${PGID}, its already there probably"
   echo "Assign netdata user to docker group ${PGID}"
-  usermod -a -G "${PGID}" "${DOCKER_USR}" || echo >&2 "Could not add netdata user to group docker with ID ${PGID}"
+  usermod --append --groups "docker" "${DOCKER_USR}" || echo >&2 "Could not add netdata user to group docker with ID ${PGID}"
 fi
+
+# Needed to read Proxmox VMs and (LXC) containers configuration files (name resolution + CPU and memory limits)
+function add_netdata_to_proxmox_conf_files_group() {
+  group_guid="$(stat -c %g /host/etc/pve 2>/dev/null || true)"
+  [ -z "${group_guid}" ] && return
+
+  if ! getent group "${group_guid}" >/dev/null; then
+    echo "Creating proxmox-etc-pve group with GID ${group_guid}"
+    if ! addgroup -g "${group_guid}" "proxmox-etc-pve"; then
+      echo >&2 "Failed to add group proxmox-etc-pve with GID ${group_guid}."
+      return
+    fi
+  fi
+
+  if ! getent group "${group_guid}" | grep -q netdata; then
+    echo "Assign netdata user to group ${group_guid}"
+    if ! usermod -a -G "${group_guid}" "${DOCKER_USR}"; then
+      echo >&2 "Failed to add netdata user to group with GID ${group_guid}."
+      return
+    fi
+  fi
+}
+
+if [ -d "/host/etc/pve" ]; then
+  add_netdata_to_proxmox_conf_files_group || true
+fi
+
 
 if mountpoint -q /etc/netdata; then
   echo "Copying stock configuration to /etc/netdata"
@@ -71,13 +98,20 @@ if [ -n "${NETDATA_CLAIM_URL}" ] && [ -n "${NETDATA_CLAIM_TOKEN}" ] && [ ! -f /v
 fi
 
 if [ -n "${NETDATA_EXTRA_APK_PACKAGES}" ]; then
-  echo "Fetching APK repository metadata."
-  if ! apk update; then
-    echo "Failed to fetch APK repository metadata."
+  echo >&2 "WARNING: Netdata’s Docker images have switched from Alpine to Debian as a base platform. Supplementary package support is now handled through the NETDATA_EXTRA_DEB_PACKAGES variable instead of NETDATA_EXTRA_APK_PACKAGES."
+  echo >&2 "WARNING: The container will still run, but supplementary packages listed in NETDATA_EXTRA_APK_PACKAGES will not be installed."
+  echo >&2 "WARNING: To remove these messages, either undefine NETDATA_EXTRA_APK_PACKAGES, or define it to an empty string."
+fi
+
+if [ -n "${NETDATA_EXTRA_DEB_PACKAGES}" ]; then
+  echo "Fetching APT repository metadata."
+  if ! apt-get update; then
+    echo "Failed to fetch APT repository metadata."
   else
     echo "Installing supplementary packages."
+    export DEBIAN_FRONTEND="noninteractive"
     # shellcheck disable=SC2086
-    if ! apk add --no-cache ${NETDATA_EXTRA_APK_PACKAGES}; then
+    if ! apt-get install -y --no-install-recommends ${NETDATA_EXTRA_DEB_PACKAGES}; then
       echo "Failed to install supplementary packages."
     fi
   fi

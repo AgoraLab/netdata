@@ -351,20 +351,22 @@ static void ebpf_obsolete_fs_charts(int update_every)
             flags &= ~NETDATA_FILESYSTEM_FLAG_CHART_CREATED;
 
             ebpf_write_chart_obsolete(NETDATA_FILESYSTEM_FAMILY, efp->hread.name,
+                                      "",
                                       efp->hread.title,
                                       EBPF_COMMON_DIMENSION_CALL, efp->family_name,
                                       NULL, NETDATA_EBPF_CHART_TYPE_STACKED, efp->hread.order, update_every);
 
             ebpf_write_chart_obsolete(NETDATA_FILESYSTEM_FAMILY, efp->hwrite.name,
+                                      "",
                                       efp->hwrite.title,
                                       EBPF_COMMON_DIMENSION_CALL, efp->family_name,
                                       NULL, NETDATA_EBPF_CHART_TYPE_STACKED, efp->hwrite.order, update_every);
 
-            ebpf_write_chart_obsolete(NETDATA_FILESYSTEM_FAMILY, efp->hopen.name, efp->hopen.title,
+            ebpf_write_chart_obsolete(NETDATA_FILESYSTEM_FAMILY, efp->hopen.name, "", efp->hopen.title,
                                       EBPF_COMMON_DIMENSION_CALL, efp->family_name,
                                       NULL, NETDATA_EBPF_CHART_TYPE_STACKED, efp->hopen.order, update_every);
 
-            ebpf_write_chart_obsolete(NETDATA_FILESYSTEM_FAMILY, efp->hadditional.name, efp->hadditional.title,
+            ebpf_write_chart_obsolete(NETDATA_FILESYSTEM_FAMILY, efp->hadditional.name,"",  efp->hadditional.title,
                                       EBPF_COMMON_DIMENSION_CALL, efp->family_name,
                                       NULL, NETDATA_EBPF_CHART_TYPE_STACKED, efp->hadditional.order,
                                       update_every);
@@ -390,9 +392,9 @@ static void ebpf_create_fs_charts(int update_every)
         ebpf_filesystem_partitions_t *efp = &localfs[i];
         uint32_t flags = efp->flags;
         if (flags & NETDATA_FILESYSTEM_FLAG_HAS_PARTITION && !(flags & test)) {
-            snprintfz(title, 255, "%s latency for each read request.", efp->filesystem);
-            snprintfz(family, 63, "%s_latency", efp->family);
-            snprintfz(chart_name, 63, "%s_read_latency", efp->filesystem);
+            snprintfz(title, sizeof(title) - 1, "%s latency for each read request.", efp->filesystem);
+            snprintfz(family, sizeof(family) - 1, "%s_latency", efp->family);
+            snprintfz(chart_name, sizeof(chart_name) - 1, "%s_read_latency", efp->filesystem);
             efp->hread.name = strdupz(chart_name);
             efp->hread.title = strdupz(title);
             efp->hread.ctx = NULL;
@@ -408,8 +410,8 @@ static void ebpf_create_fs_charts(int update_every)
                               update_every, NETDATA_EBPF_MODULE_NAME_FILESYSTEM);
             order++;
 
-            snprintfz(title, 255, "%s latency for each write request.", efp->filesystem);
-            snprintfz(chart_name, 63, "%s_write_latency", efp->filesystem);
+            snprintfz(title, sizeof(title) - 1, "%s latency for each write request.", efp->filesystem);
+            snprintfz(chart_name, sizeof(chart_name) - 1, "%s_write_latency", efp->filesystem);
             efp->hwrite.name = strdupz(chart_name);
             efp->hwrite.title = strdupz(title);
             efp->hwrite.ctx = NULL;
@@ -423,8 +425,8 @@ static void ebpf_create_fs_charts(int update_every)
                               update_every, NETDATA_EBPF_MODULE_NAME_FILESYSTEM);
             order++;
 
-            snprintfz(title, 255, "%s latency for each open request.", efp->filesystem);
-            snprintfz(chart_name, 63, "%s_open_latency", efp->filesystem);
+            snprintfz(title, sizeof(title) - 1, "%s latency for each open request.", efp->filesystem);
+            snprintfz(chart_name, sizeof(chart_name) - 1, "%s_open_latency", efp->filesystem);
             efp->hopen.name = strdupz(chart_name);
             efp->hopen.title = strdupz(title);
             efp->hopen.ctx = NULL;
@@ -439,9 +441,9 @@ static void ebpf_create_fs_charts(int update_every)
             order++;
 
             char *type = (efp->flags & NETDATA_FILESYSTEM_ATTR_CHARTS) ? "attribute" : "sync";
-            snprintfz(title, 255, "%s latency for each %s request.", efp->filesystem, type);
-            snprintfz(chart_name, 63, "%s_%s_latency", efp->filesystem, type);
-            snprintfz(ctx, 63, "filesystem.%s_latency", type);
+            snprintfz(title, sizeof(title) - 1, "%s latency for each %s request.", efp->filesystem, type);
+            snprintfz(chart_name, sizeof(chart_name) - 1, "%s_%s_latency", efp->filesystem, type);
+            snprintfz(ctx, sizeof(ctx) - 1, "filesystem.%s_latency", type);
             efp->hadditional.name = strdupz(chart_name);
             efp->hadditional.title = strdupz(title);
             efp->hadditional.ctx = strdupz(ctx);
@@ -470,12 +472,12 @@ int ebpf_filesystem_initialize_ebpf_data(ebpf_module_t *em)
 {
     pthread_mutex_lock(&lock);
     int i;
-    const char *saved_name = em->thread_name;
+    const char *saved_name = em->info.thread_name;
     uint64_t kernels = em->kernels;
     for (i = 0; localfs[i].filesystem; i++) {
         ebpf_filesystem_partitions_t *efp = &localfs[i];
         if (!efp->probe_links && efp->flags & NETDATA_FILESYSTEM_LOAD_EBPF_PROGRAM) {
-            em->thread_name = efp->filesystem;
+            em->info.thread_name = efp->filesystem;
             em->kernels = efp->kernels;
             em->maps = efp->fs_maps;
 #ifdef LIBBPF_MAJOR_VERSION
@@ -484,7 +486,7 @@ int ebpf_filesystem_initialize_ebpf_data(ebpf_module_t *em)
             if (em->load & EBPF_LOAD_LEGACY) {
                 efp->probe_links = ebpf_load_program(ebpf_plugin_dir, em, running_on_kernel, isrh, &efp->objects);
                 if (!efp->probe_links) {
-                    em->thread_name = saved_name;
+                    em->info.thread_name = saved_name;
                     em->kernels = kernels;
                     em->maps = NULL;
                     pthread_mutex_unlock(&lock);
@@ -495,7 +497,7 @@ int ebpf_filesystem_initialize_ebpf_data(ebpf_module_t *em)
             else {
                 efp->fs_obj = filesystem_bpf__open();
                 if (!efp->fs_obj) {
-                    em->thread_name = saved_name;
+                    em->info.thread_name = saved_name;
                     em->kernels = kernels;
                     return -1;
                 } else {
@@ -515,7 +517,7 @@ int ebpf_filesystem_initialize_ebpf_data(ebpf_module_t *em)
         }
         efp->flags &= ~NETDATA_FILESYSTEM_LOAD_EBPF_PROGRAM;
     }
-    em->thread_name = saved_name;
+    em->info.thread_name = saved_name;
     pthread_mutex_unlock(&lock);
     em->kernels = kernels;
     em->maps = NULL;
@@ -671,6 +673,7 @@ static void ebpf_obsolete_filesystem_global(ebpf_module_t *em)
 
         ebpf_write_chart_obsolete(NETDATA_FILESYSTEM_FAMILY,
                                   efp->hread.name,
+                                  "",
                                   efp->hread.title,
                                   EBPF_COMMON_DIMENSION_CALL,
                                   efp->family_name,
@@ -681,6 +684,7 @@ static void ebpf_obsolete_filesystem_global(ebpf_module_t *em)
 
         ebpf_write_chart_obsolete(NETDATA_FILESYSTEM_FAMILY,
                                   efp->hwrite.name,
+                                  "",
                                   efp->hwrite.title,
                                   EBPF_COMMON_DIMENSION_CALL,
                                   efp->family_name,
@@ -691,6 +695,7 @@ static void ebpf_obsolete_filesystem_global(ebpf_module_t *em)
 
         ebpf_write_chart_obsolete(NETDATA_FILESYSTEM_FAMILY,
                                   efp->hopen.name,
+                                  "",
                                   efp->hopen.title,
                                   EBPF_COMMON_DIMENSION_CALL,
                                   efp->family_name,
@@ -701,6 +706,7 @@ static void ebpf_obsolete_filesystem_global(ebpf_module_t *em)
 
         ebpf_write_chart_obsolete(NETDATA_FILESYSTEM_FAMILY,
                                   efp->hadditional.name,
+                                  "",
                                   efp->hadditional.title,
                                   EBPF_COMMON_DIMENSION_CALL,
                                   efp->family_name,
@@ -909,10 +915,10 @@ static void filesystem_collector(ebpf_module_t *em)
     int counter = update_every - 1;
     uint32_t running_time = 0;
     uint32_t lifetime = em->lifetime;
-    while (!ebpf_exit_plugin && running_time < lifetime) {
+    while (!ebpf_plugin_exit && running_time < lifetime) {
         (void)heartbeat_next(&hb, USEC_PER_SEC);
 
-        if (ebpf_exit_plugin || ++counter != update_every)
+        if (ebpf_plugin_exit || ++counter != update_every)
             continue;
 
         counter = 0;

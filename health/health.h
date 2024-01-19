@@ -71,7 +71,6 @@ ALARM_ENTRY* health_create_alarm_entry(
     STRING *chart,
     STRING *chart_context,
     STRING *chart_id,
-    STRING *family,
     STRING *classification,
     STRING *component,
     STRING *type,
@@ -84,6 +83,7 @@ ALARM_ENTRY* health_create_alarm_entry(
     RRDCALC_STATUS new_status,
     STRING *source,
     STRING *units,
+    STRING *summary,
     STRING *info,
     int delay,
     HEALTH_ENTRY_FLAGS flags);
@@ -102,7 +102,9 @@ void *health_cmdapi_thread(void *ptr);
 char *health_edit_command_from_source(const char *source);
 void sql_refresh_hashes(void);
 
-void health_add_host_labels(void);
 void health_string2json(BUFFER *wb, const char *prefix, const char *label, const char *value, const char *suffix);
+
+void health_log_alert_transition_with_trace(RRDHOST *host, ALARM_ENTRY *ae, int line, const char *file, const char *function);
+#define health_log_alert(host, ae) health_log_alert_transition_with_trace(host, ae, __LINE__, __FILE__, __FUNCTION__)
 
 #endif //NETDATA_HEALTH_H

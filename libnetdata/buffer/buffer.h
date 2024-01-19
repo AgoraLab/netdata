@@ -72,6 +72,7 @@ typedef enum __attribute__ ((__packed__)) {
     BUFFER_JSON_OPTIONS_DEFAULT = 0,
     BUFFER_JSON_OPTIONS_MINIFY = (1 << 0),
     BUFFER_JSON_OPTIONS_NEWLINE_ON_ARRAY_ITEMS = (1 << 1),
+    BUFFER_JSON_OPTIONS_NON_ANONYMOUS = (1 << 2),
 } BUFFER_JSON_OPTIONS;
 
 typedef struct web_buffer {
@@ -93,11 +94,12 @@ typedef struct web_buffer {
     } json;
 } BUFFER;
 
+#define CLEAN_BUFFER _cleanup_(buffer_freep) BUFFER
+
 #define buffer_cacheable(wb)    do { (wb)->options |= WB_CONTENT_CACHEABLE;    if((wb)->options & WB_CONTENT_NO_CACHEABLE) (wb)->options &= ~WB_CONTENT_NO_CACHEABLE; } while(0)
 #define buffer_no_cacheable(wb) do { (wb)->options |= WB_CONTENT_NO_CACHEABLE; if((wb)->options & WB_CONTENT_CACHEABLE)    (wb)->options &= ~WB_CONTENT_CACHEABLE;  (wb)->expires = 0; } while(0)
 
 #define buffer_strlen(wb) ((wb)->len)
-const char *buffer_tostring(BUFFER *wb);
 
 #define BUFFER_OVERFLOW_EOF "EOF"
 
@@ -135,6 +137,10 @@ BUFFER *buffer_create(size_t size, size_t *statistics);
 void buffer_free(BUFFER *b);
 void buffer_increase(BUFFER *b, size_t free_size_required);
 
+static inline void buffer_freep(BUFFER **bp) {
+    if(bp) buffer_free(*bp);
+}
+
 void buffer_snprintf(BUFFER *wb, size_t len, const char *fmt, ...) PRINTFLIKE(3, 4);
 void buffer_vsprintf(BUFFER *wb, const char *fmt, va_list args);
 void buffer_sprintf(BUFFER *wb, const char *fmt, ...) PRINTFLIKE(2,3);
@@ -157,6 +163,16 @@ void buffer_json_initialize(BUFFER *wb, const char *key_quote, const char *value
                             bool add_anonymous_object, BUFFER_JSON_OPTIONS options);
 
 void buffer_json_finalize(BUFFER *wb);
+
+static const char *buffer_tostring(BUFFER *wb)
+{
+    buffer_need_bytes(wb, 1);
+    wb->buffer[wb->len] = '\0';
+
+    buffer_overflow_check(wb);
+
+    return(wb->buffer);
+}
 
 static inline void _buffer_json_depth_push(BUFFER *wb, BUFFER_JSON_NODE_TYPE type) {
 #ifdef NETDATA_INTERNAL_CHECKS
@@ -197,6 +213,13 @@ static inline void buffer_fast_rawcat(BUFFER *wb, const char *txt, size_t len) {
     wb->len += len;
     wb->buffer[wb->len] = '\0';
 
+    buffer_overflow_check(wb);
+}
+
+static inline void buffer_putc(BUFFER *wb, char c) {
+    buffer_need_bytes(wb, 2);
+    wb->buffer[wb->len++] = c;
+    wb->buffer[wb->len] = '\0';
     buffer_overflow_check(wb);
 }
 
@@ -249,20 +272,38 @@ static inline void buffer_strcat(BUFFER *wb, const char *txt) {
     buffer_overflow_check(wb);
 }
 
+static inline void buffer_contents_replace(BUFFER *wb, const char *txt, size_t len) {
+    wb->len = 0;
+    buffer_need_bytes(wb, len + 1);
+
+    memcpy(wb->buffer, txt, len);
+    wb->len = len;
+    wb->buffer[wb->len] = '\0';
+
+    buffer_overflow_check(wb);
+}
+
 static inline void buffer_strncat(BUFFER *wb, const char *txt, size_t len) {
     if(unlikely(!txt || !*txt)) return;
 
-    const char *t = txt;
     buffer_need_bytes(wb, len + 1);
-    char *s = &wb->buffer[wb->len];
-    char *d = s;
-    const char *e = &wb->buffer[wb->len + len];
 
-    while(*t && d < e)
-        *d++ = *t++;
+    memcpy(&wb->buffer[wb->len], txt, len);
 
-    wb->len += d - s;
+    wb->len += len;
+    wb->buffer[wb->len] = '\0';
 
+    buffer_overflow_check(wb);
+}
+
+static inline void buffer_memcat(BUFFER *wb, const void *mem, size_t bytes) {
+    if(unlikely(!mem)) return;
+
+    buffer_need_bytes(wb, bytes + 1);
+
+    memcpy(&wb->buffer[wb->len], mem, bytes);
+
+    wb->len += bytes;
     wb->buffer[wb->len] = '\0';
 
     buffer_overflow_check(wb);
@@ -795,8 +836,13 @@ static inline void buffer_json_member_add_boolean(BUFFER *wb, const char *key, b
 
 static inline void buffer_json_member_add_array(BUFFER *wb, const char *key) {
     buffer_print_json_comma_newline_spacing(wb);
-    buffer_print_json_key(wb, key);
-    buffer_fast_strcat(wb, ":[", 2);
+    if (key) {
+        buffer_print_json_key(wb, key);
+        buffer_fast_strcat(wb, ":[", 2);
+    }
+    else
+        buffer_fast_strcat(wb, "[", 1);
+
     wb->json.stack[wb->json.depth].count++;
 
     _buffer_json_depth_push(wb, BUFFER_JSON_ARRAY);
@@ -843,6 +889,13 @@ static inline void buffer_json_add_array_item_uint64(BUFFER *wb, uint64_t value)
     buffer_print_json_comma_newline_spacing(wb);
 
     buffer_print_uint64(wb, value);
+    wb->json.stack[wb->json.depth].count++;
+}
+
+static inline void buffer_json_add_array_item_boolean(BUFFER *wb, bool value) {
+    buffer_print_json_comma_newline_spacing(wb);
+
+    buffer_strcat(wb, value ? "true" : "false");
     wb->json.stack[wb->json.depth].count++;
 }
 
@@ -944,11 +997,15 @@ typedef enum __attribute__((packed)) {
     RRDF_FIELD_OPTS_VISIBLE      = (1 << 1), // the field should be visible by default
     RRDF_FIELD_OPTS_STICKY       = (1 << 2), // the field should be sticky
     RRDF_FIELD_OPTS_FULL_WIDTH   = (1 << 3), // the field should get full width
-    RRDF_FIELD_OPTS_WRAP         = (1 << 4), // the field should get full width
+    RRDF_FIELD_OPTS_WRAP         = (1 << 4), // the field should wrap
+    RRDF_FIELD_OPTS_DUMMY        = (1 << 5), // not a presentable field
+    RRDF_FIELD_OPTS_EXPANDED_FILTER = (1 << 6), // show the filter expanded
 } RRDF_FIELD_OPTIONS;
 
 typedef enum __attribute__((packed)) {
+    RRDF_FIELD_TYPE_NONE,
     RRDF_FIELD_TYPE_INTEGER,
+    RRDF_FIELD_TYPE_BOOLEAN,
     RRDF_FIELD_TYPE_STRING,
     RRDF_FIELD_TYPE_DETAIL_STRING,
     RRDF_FIELD_TYPE_BAR_WITH_INTEGER,
@@ -960,8 +1017,14 @@ typedef enum __attribute__((packed)) {
 static inline const char *rrdf_field_type_to_string(RRDF_FIELD_TYPE type) {
     switch(type) {
         default:
+        case RRDF_FIELD_TYPE_NONE:
+            return "none";
+
         case RRDF_FIELD_TYPE_INTEGER:
             return "integer";
+
+        case RRDF_FIELD_TYPE_BOOLEAN:
+            return "boolean";
 
         case RRDF_FIELD_TYPE_STRING:
             return "string";
@@ -984,10 +1047,11 @@ static inline const char *rrdf_field_type_to_string(RRDF_FIELD_TYPE type) {
 }
 
 typedef enum __attribute__((packed)) {
-    RRDF_FIELD_VISUAL_VALUE,    // show the value, possibly applying a transformation
-    RRDF_FIELD_VISUAL_BAR,      // show the value and a bar, respecting the max field to fill the bar at 100%
-    RRDF_FIELD_VISUAL_PILL,     //
-    RRDF_FIELD_VISUAL_MARKDOC,  //
+    RRDF_FIELD_VISUAL_VALUE,        // show the value, possibly applying a transformation
+    RRDF_FIELD_VISUAL_BAR,          // show the value and a bar, respecting the max field to fill the bar at 100%
+    RRDF_FIELD_VISUAL_PILL,         //
+    RRDF_FIELD_VISUAL_RICH,         //
+    RRDR_FIELD_VISUAL_ROW_OPTIONS,  // this is a dummy column that is used for row options
 } RRDF_FIELD_VISUAL;
 
 static inline const char *rrdf_field_visual_to_string(RRDF_FIELD_VISUAL visual) {
@@ -1002,8 +1066,11 @@ static inline const char *rrdf_field_visual_to_string(RRDF_FIELD_VISUAL visual) 
         case RRDF_FIELD_VISUAL_PILL:
             return "pill";
 
-        case RRDF_FIELD_VISUAL_MARKDOC:
-            return "markdoc";
+        case RRDF_FIELD_VISUAL_RICH:
+            return "richValue";
+
+        case RRDR_FIELD_VISUAL_ROW_OPTIONS:
+            return "rowOptions";
     }
 }
 
@@ -1089,7 +1156,7 @@ static inline const char *rrdf_field_summary_to_string(RRDF_FIELD_SUMMARY summar
 }
 
 typedef enum __attribute__((packed)) {
-    RRDF_FIELD_FILTER_NONE,
+    RRDF_FIELD_FILTER_NONE = 0,
     RRDF_FIELD_FILTER_RANGE,
     RRDF_FIELD_FILTER_MULTISELECT,
     RRDF_FIELD_FILTER_FACET,
@@ -1150,6 +1217,10 @@ buffer_rrdf_table_add_field(BUFFER *wb, size_t field_id, const char *key, const 
 
         buffer_json_member_add_boolean(wb, "full_width", options & RRDF_FIELD_OPTS_FULL_WIDTH);
         buffer_json_member_add_boolean(wb, "wrap", options & RRDF_FIELD_OPTS_WRAP);
+        buffer_json_member_add_boolean(wb, "default_expanded_filter", options & RRDF_FIELD_OPTS_EXPANDED_FILTER);
+
+        if(options & RRDF_FIELD_OPTS_DUMMY)
+            buffer_json_member_add_boolean(wb, "dummy", true);
     }
     buffer_json_object_close(wb);
 }

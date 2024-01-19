@@ -213,7 +213,7 @@ static inline int rrdinstance_to_json_callback(const DICTIONARY_ITEM *item, void
         buffer_json_array_close(wb);
     }
 
-    if(options & RRDCONTEXT_OPTION_SHOW_LABELS && ri->rrdlabels && dictionary_entries(ri->rrdlabels)) {
+    if(options & RRDCONTEXT_OPTION_SHOW_LABELS && ri->rrdlabels && rrdlabels_entries(ri->rrdlabels)) {
         buffer_json_member_add_object(wb, "labels");
         rrdlabels_to_buffer_json_members(ri->rrdlabels, wb);
         buffer_json_object_close(wb);
@@ -366,7 +366,7 @@ int rrdcontext_to_json(RRDHOST *host, BUFFER *wb, time_t after, time_t before, R
     RRDCONTEXT *rc = rrdcontext_acquired_value(rca);
 
     if(after != 0 && before != 0)
-        rrdr_relative_window_to_absolute(&after, &before, NULL, false);
+        rrdr_relative_window_to_absolute_query(&after, &before, NULL, false);
 
     buffer_json_initialize(wb, "\"", "\"", 0, true, BUFFER_JSON_OPTIONS_DEFAULT);
     struct rrdcontext_to_json t_contexts = {
@@ -403,7 +403,7 @@ int rrdcontexts_to_json(RRDHOST *host, BUFFER *wb, time_t after, time_t before, 
         uuid_unparse(*host->node_id, node_uuid);
 
     if(after != 0 && before != 0)
-        rrdr_relative_window_to_absolute(&after, &before, NULL, false);
+        rrdr_relative_window_to_absolute_query(&after, &before, NULL, false);
 
     buffer_json_initialize(wb, "\"", "\"", 0, true, BUFFER_JSON_OPTIONS_DEFAULT);
     buffer_json_member_add_string(wb, "hostname", rrdhost_hostname(host));

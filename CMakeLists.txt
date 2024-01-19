@@ -465,6 +465,7 @@ set(LIBNETDATA_FILES
         libnetdata/log/log.h
         libnetdata/os.c
         libnetdata/os.h
+        libnetdata/endian.h
         libnetdata/onewayalloc/onewayalloc.c
         libnetdata/onewayalloc/onewayalloc.h
         libnetdata/popen/popen.c
@@ -488,9 +489,15 @@ set(LIBNETDATA_FILES
         libnetdata/threads/threads.h
         libnetdata/url/url.c
         libnetdata/url/url.h
+        libnetdata/dyn_conf/dyn_conf.c
+        libnetdata/dyn_conf/dyn_conf.h
         libnetdata/string/utf8.h
         libnetdata/worker_utilization/worker_utilization.c
         libnetdata/worker_utilization/worker_utilization.h
+        libnetdata/facets/facets.c
+        libnetdata/facets/facets.h
+        libnetdata/functions_evloop/functions_evloop.h
+        libnetdata/functions_evloop/functions_evloop.c
         libnetdata/http/http_defs.h
         )
 
@@ -711,6 +718,10 @@ set(STATSD_PLUGIN_FILES
         collectors/statsd.plugin/statsd.c
         )
 
+set(SYSTEMD_JOURNAL_PLUGIN_FILES
+        collectors/systemd-journal.plugin/systemd-journal.c
+        )
+
 set(RRD_PLUGIN_FILES
         database/contexts/api_v1.c
         database/contexts/api_v2.c
@@ -735,6 +746,7 @@ set(RRD_PLUGIN_FILES
         database/rrdfunctions.h
         database/rrdhost.c
         database/rrdlabels.c
+        database/rrdlabels.h
         database/rrd.c
         database/rrd.h
         database/rrdset.c
@@ -764,6 +776,9 @@ set(RRD_PLUGIN_FILES
         database/sqlite/sqlite_aclk_alert.h
         database/sqlite/sqlite3.c
         database/sqlite/sqlite3.h
+        database/sqlite/sqlite3recover.c
+        database/sqlite/sqlite3recover.h
+        database/sqlite/dbdata.c
         database/engine/rrdengine.c
         database/engine/rrdengine.h
         database/engine/rrddiskprotocol.h
@@ -783,6 +798,10 @@ set(RRD_PLUGIN_FILES
         database/engine/metric.h
         database/engine/pdc.c
         database/engine/pdc.h
+        database/engine/page.c
+        database/engine/page.h
+        database/engine/page_test.cc
+        database/engine/page_test.h
         database/KolmogorovSmirnovDist.c
         database/KolmogorovSmirnovDist.h
         )
@@ -870,6 +889,7 @@ set(STREAMING_PLUGIN_FILES
         streaming/sender.c
         streaming/replication.c
         streaming/replication.h
+        streaming/common.h
         )
 
 set(CLAIM_PLUGIN_FILES
@@ -1055,6 +1075,44 @@ ELSE()
     message(STATUS "ML: disabled")
 ENDIF()
 
+set(LOGSMANAGEMENT_FILES
+        logsmanagement/rrd_api/rrd_api_docker_ev.c
+        logsmanagement/rrd_api/rrd_api_docker_ev.h
+        logsmanagement/rrd_api/rrd_api_generic.c
+        logsmanagement/rrd_api/rrd_api_generic.h
+        logsmanagement/rrd_api/rrd_api_kernel.c
+        logsmanagement/rrd_api/rrd_api_kernel.h
+        logsmanagement/rrd_api/rrd_api_mqtt.c
+        logsmanagement/rrd_api/rrd_api_mqtt.h
+        logsmanagement/rrd_api/rrd_api_stats.c
+        logsmanagement/rrd_api/rrd_api_stats.h
+        logsmanagement/rrd_api/rrd_api_systemd.c
+        logsmanagement/rrd_api/rrd_api_systemd.h
+        logsmanagement/rrd_api/rrd_api_web_log.c
+        logsmanagement/rrd_api/rrd_api_web_log.h
+        logsmanagement/rrd_api/rrd_api.h
+        logsmanagement/unit_test/unit_test.c
+        logsmanagement/unit_test/unit_test.h
+        logsmanagement/circular_buffer.c
+        logsmanagement/circular_buffer.h
+        logsmanagement/db_api.c
+        logsmanagement/db_api.h
+        logsmanagement/file_info.h
+        logsmanagement/flb_plugin.c
+        logsmanagement/flb_plugin.h
+        logsmanagement/functions.c
+        logsmanagement/functions.h
+        logsmanagement/helper.h
+        logsmanagement/defaults.h
+        logsmanagement/logsmanag_config.c
+        logsmanagement/logsmanag_config.h
+        logsmanagement/logsmanagement.c
+        logsmanagement/parser.c
+        logsmanagement/parser.h
+        logsmanagement/query.c
+        logsmanagement/query.h
+        )
+
 set(NETDATA_FILES
         collectors/all.h
         ${DAEMON_FILES}
@@ -1067,6 +1125,7 @@ set(NETDATA_FILES
         ${RRD_PLUGIN_FILES}
         ${REGISTRY_PLUGIN_FILES}
         ${STATSD_PLUGIN_FILES}
+        ${SYSTEMD_JOURNAL_PLUGIN_FILES}
         ${STREAMING_PLUGIN_FILES}
         ${WEB_PLUGIN_FILES}
         ${CLAIM_PLUGIN_FILES}
@@ -1091,6 +1150,13 @@ add_definitions(
         -DWEB_DIR="/usr/share/netdata/web"
         -DVARLIB_DIR="/var/lib/netdata"
 )
+
+# -----------------------------------------------------------------------------
+# logs management
+
+IF(ENABLE_LOGSMANAGEMENT) 
+    list(APPEND NETDATA_FILES ${LOGSMANAGEMENT_FILES})
+ENDIF()
 
 # -----------------------------------------------------------------------------
 # kinesis exporting connector
@@ -1727,7 +1793,6 @@ endif()
 
 endif()
 endif()
-
 
 # generate config.h so that CMake becomes independent of automake
 

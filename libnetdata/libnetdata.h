@@ -11,8 +11,8 @@ extern "C" {
 #include <config.h>
 #endif
 
-#ifdef ENABLE_LZ4
-#define ENABLE_RRDPUSH_COMPRESSION 1
+#if defined(ENABLE_BROTLIENC) && defined(ENABLE_BROTLIDEC)
+#define ENABLE_BROTLI 1
 #endif
 
 #ifdef ENABLE_OPENSSL
@@ -200,6 +200,8 @@ extern "C" {
 
 // ----------------------------------------------------------------------------
 // netdata common definitions
+
+#define _cleanup_(x) __attribute__((__cleanup__(x)))
 
 #ifdef __GNUC__
 #define GCC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__)
@@ -681,108 +683,13 @@ static inline BITMAPX *bitmapX_create(uint32_t bits) {
 #define bitmap1024_get_bit(ptr, idx) bitmapX_get_bit((BITMAPX *)ptr, idx)
 #define bitmap1024_set_bit(ptr, idx, value) bitmapX_set_bit((BITMAPX *)ptr, idx, value)
 
-
-#define COMPRESSION_MAX_MSG_SIZE 0x4000
-#define PLUGINSD_LINE_MAX (COMPRESSION_MAX_MSG_SIZE - 1024)
-int pluginsd_isspace(char c);
-int config_isspace(char c);
-int group_by_label_isspace(char c);
-
-extern bool isspace_map_pluginsd[256];
-extern bool isspace_map_config[256];
-extern bool isspace_map_group_by_label[256];
-
-static inline size_t quoted_strings_splitter(char *str, char **words, size_t max_words, bool *isspace_map) {
-    char *s = str, quote = 0;
-    size_t i = 0;
-
-    // skip all white space
-    while (unlikely(isspace_map[(uint8_t)*s]))
-        s++;
-
-    if(unlikely(!*s)) {
-        words[i] = NULL;
-        return 0;
-    }
-
-    // check for quote
-    if (unlikely(*s == '\'' || *s == '"')) {
-        quote = *s; // remember the quote
-        s++;        // skip the quote
-    }
-
-    // store the first word
-    words[i++] = s;
-
-    // while we have something
-    while (likely(*s)) {
-        // if it is an escape
-        if (unlikely(*s == '\\' && s[1])) {
-            s += 2;
-            continue;
-        }
-
-        // if it is a quote
-        else if (unlikely(*s == quote)) {
-            quote = 0;
-            *s = ' ';
-            continue;
-        }
-
-        // if it is a space
-        else if (unlikely(quote == 0 && isspace_map[(uint8_t)*s])) {
-            // terminate the word
-            *s++ = '\0';
-
-            // skip all white space
-            while (likely(isspace_map[(uint8_t)*s]))
-                s++;
-
-            // check for a quote
-            if (unlikely(*s == '\'' || *s == '"')) {
-                quote = *s; // remember the quote
-                s++;        // skip the quote
-            }
-
-            // if we reached the end, stop
-            if (unlikely(!*s))
-                break;
-
-            // store the next word
-            if (likely(i < max_words))
-                words[i++] = s;
-            else
-                break;
-        }
-
-        // anything else
-        else
-            s++;
-    }
-
-    if (likely(i < max_words))
-        words[i] = NULL;
-
-    return i;
-}
-
-#define quoted_strings_splitter_query_group_by_label(str, words, max_words) \
-        quoted_strings_splitter(str, words, max_words, isspace_map_group_by_label)
-
-#define quoted_strings_splitter_config(str, words, max_words) \
-        quoted_strings_splitter(str, words, max_words, isspace_map_config)
-
-#define quoted_strings_splitter_pluginsd(str, words, max_words) \
-        quoted_strings_splitter(str, words, max_words, isspace_map_pluginsd)
-
-static inline char *get_word(char **words, size_t num_words, size_t index) {
-    if (unlikely(index >= num_words))
-        return NULL;
-
-    return words[index];
-}
+#define COMPRESSION_MAX_CHUNK 0x4000
+#define COMPRESSION_MAX_OVERHEAD 128
+#define COMPRESSION_MAX_MSG_SIZE (COMPRESSION_MAX_CHUNK - COMPRESSION_MAX_OVERHEAD - 1)
+#define PLUGINSD_LINE_MAX (COMPRESSION_MAX_MSG_SIZE - 768)
 
 bool run_command_and_copy_output_to_stdout(const char *command, int max_line_length);
+struct web_buffer *run_command_and_get_output_to_buffer(const char *command, int max_line_length);
 
 typedef enum {
     OPEN_FD_ACTION_CLOSE,
@@ -798,6 +705,12 @@ void for_each_open_fd(OPEN_FD_ACTION action, OPEN_FD_EXCLUDE excluded_fds);
 void netdata_cleanup_and_exit(int ret) NORETURN;
 void send_statistics(const char *action, const char *action_result, const char *action_data);
 extern char *netdata_configured_host_prefix;
+
+#define XXH_INLINE_ALL
+#include "xxhash.h"
+
+#include "uuid/uuid.h"
+
 #include "libjudy/src/Judy.h"
 #include "july/july.h"
 #include "os.h"
@@ -807,7 +720,11 @@ extern char *netdata_configured_host_prefix;
 #include "circular_buffer/circular_buffer.h"
 #include "avl/avl.h"
 #include "inlined.h"
+#include "line_splitter/line_splitter.h"
 #include "clocks/clocks.h"
+#include "datetime/iso8601.h"
+#include "datetime/rfc3339.h"
+#include "datetime/rfc7231.h"
 #include "completion/completion.h"
 #include "popen/popen.h"
 #include "simple_pattern/simple_pattern.h"
@@ -816,7 +733,9 @@ extern char *netdata_configured_host_prefix;
 #endif
 #include "socket/socket.h"
 #include "config/appconfig.h"
+#include "log/journal.h"
 #include "log/log.h"
+#include "buffered_reader/buffered_reader.h"
 #include "procfile/procfile.h"
 #include "string/string.h"
 #include "dictionary/dictionary.h"
@@ -838,6 +757,7 @@ extern char *netdata_configured_host_prefix;
 #include "gorilla/gorilla.h"
 #include "facets/facets.h"
 #include "dyn_conf/dyn_conf.h"
+#include "functions_evloop/functions_evloop.h"
 
 // BEWARE: this exists in alarm-notify.sh
 #define DEFAULT_CLOUD_BASE_URL "https://app.netdata.cloud"
@@ -984,7 +904,8 @@ int hash256_string(const unsigned char *string, size_t size, char *hash);
 extern bool unittest_running;
 #define API_RELATIVE_TIME_MAX (3 * 365 * 86400)
 
-bool rrdr_relative_window_to_absolute(time_t *after, time_t *before, time_t *now_ptr, bool unittest_running);
+bool rrdr_relative_window_to_absolute(time_t *after, time_t *before, time_t now);
+bool rrdr_relative_window_to_absolute_query(time_t *after, time_t *before, time_t *now_ptr, bool unittest_running);
 
 int netdata_base64_decode(const char *encoded, char *decoded, size_t decoded_size);
 

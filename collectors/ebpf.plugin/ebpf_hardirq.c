@@ -226,6 +226,7 @@ static void ebpf_obsolete_hardirq_global(ebpf_module_t *em)
 {
     ebpf_write_chart_obsolete(NETDATA_EBPF_SYSTEM_GROUP,
                               "hardirq_latency",
+                              "",
                               "Hardware IRQ latency",
                               EBPF_COMMON_DIMENSION_MILLISECONDS,
                               "interrupts",
@@ -580,10 +581,10 @@ static void hardirq_collector(ebpf_module_t *em)
     //This will be cancelled by its parent
     uint32_t running_time = 0;
     uint32_t lifetime = em->lifetime;
-    while (!ebpf_exit_plugin && running_time < lifetime) {
+    while (!ebpf_plugin_exit && running_time < lifetime) {
         (void)heartbeat_next(&hb, USEC_PER_SEC);
 
-        if (ebpf_exit_plugin || ++counter != update_every)
+        if (ebpf_plugin_exit || ++counter != update_every)
             continue;
 
         counter = 0;
@@ -593,10 +594,10 @@ static void hardirq_collector(ebpf_module_t *em)
         pthread_mutex_lock(&lock);
 
         // write dims now for all hitherto discovered IRQs.
-        write_begin_chart(NETDATA_EBPF_SYSTEM_GROUP, "hardirq_latency");
+        ebpf_write_begin_chart(NETDATA_EBPF_SYSTEM_GROUP, "hardirq_latency", "");
         avl_traverse_lock(&hardirq_pub, hardirq_write_dims, NULL);
         hardirq_write_static_dims();
-        write_end_chart();
+        ebpf_write_end_chart();
 
         pthread_mutex_unlock(&lock);
 

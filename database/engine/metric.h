@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifndef DBENGINE_METRIC_H
 #define DBENGINE_METRIC_H
 
@@ -34,9 +35,6 @@ struct mrg_statistics {
     // --- atomic --- multiple readers / writers
 
     size_t entries_referenced;
-
-    MRG_CACHE_LINE_PADDING(1);
-    size_t entries_with_retention;
 
     MRG_CACHE_LINE_PADDING(2);
     size_t current_references;

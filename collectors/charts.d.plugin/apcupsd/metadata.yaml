@@ -42,6 +42,9 @@ modules:
     setup:
       prerequisites:
         list:
+          - title: "Install charts.d plugin"
+            description: |
+              If [using our official native DEB/RPM packages](https://github.com/netdata/netdata/blob/master/packaging/installer/UPDATE.md#determine-which-installation-method-you-used), make sure `netdata-plugin-chartsd` is installed.
           - title: "Required software"
             description: "Make sure the `apcaccess` and `apcupsd` are installed and running."
       configuration:
@@ -121,6 +124,34 @@ modules:
         link: https://github.com/netdata/netdata/blob/master/health/health.d/apcupsd.conf
         metric: apcupsd.load
         info: number of seconds since the last successful data collection
+      - name: apcupsd_selftest_warning
+        link: https://github.com/netdata/netdata/blob/master/health/health.d/apcupsd.conf
+        metric: apcupsd.selftest
+        info: self-test failed due to insufficient battery capacity or due to overload.
+      - name: apcupsd_status_onbatt
+        link: https://github.com/netdata/netdata/blob/master/health/health.d/apcupsd.conf
+        metric: apcupsd.status
+        info: APC UPS has switched to battery power because the input power has failed
+      - name: apcupsd_status_overload
+        link: https://github.com/netdata/netdata/blob/master/health/health.d/apcupsd.conf
+        metric: apcupsd.status
+        info: APC UPS is overloaded and cannot supply enough power to the load
+      - name: apcupsd_status_lowbatt
+        link: https://github.com/netdata/netdata/blob/master/health/health.d/apcupsd.conf
+        metric: apcupsd.status
+        info: APC UPS battery is low and needs to be recharged
+      - name: apcupsd_status_replacebatt
+        link: https://github.com/netdata/netdata/blob/master/health/health.d/apcupsd.conf
+        metric: apcupsd.status
+        info: APC UPS battery has reached the end of its lifespan and needs to be replaced
+      - name: apcupsd_status_nobatt
+        link: https://github.com/netdata/netdata/blob/master/health/health.d/apcupsd.conf
+        metric: apcupsd.status
+        info: APC UPS has no battery
+      - name: apcupsd_status_commlost
+        link: https://github.com/netdata/netdata/blob/master/health/health.d/apcupsd.conf
+        metric: apcupsd.status
+        info: APC UPS communication link is lost
     metrics:
       folding:
         title: Metrics
@@ -196,3 +227,30 @@ modules:
               chart_type: line
               dimensions:
                 - name: online
+            - name: apcupsd.selftest
+              description: UPS Self-Test status
+              unit: status
+              chart_type: line
+              dimensions:
+                - name: OK
+                - name: NO
+                - name: BT
+                - name: NG
+            - name: apcupsd.status
+              description: UPS Status
+              unit: status
+              chart_type: line
+              dimensions:
+                - name: ONLINE
+                - name: ONBATT
+                - name: OVERLOAD
+                - name: LOWBATT
+                - name: REPLACEBATT
+                - name: NOBATT
+                - name: SLAVE
+                - name: SLAVEDOWN
+                - name: COMMLOST
+                - name: CAL
+                - name: TRIM
+                - name: BOOST
+                - name: SHUTTING_DOWN

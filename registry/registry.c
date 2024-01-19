@@ -27,21 +27,19 @@ static inline void registry_unlock(void) {
 // COOKIES
 
 static void registry_set_cookie(struct web_client *w, const char *guid) {
-    char e_date[100];
-    time_t et = now_realtime_sec() + registry.persons_expiration;
-    struct tm e_tm_buf, *etm = gmtime_r(&et, &e_tm_buf);
-    strftime(e_date, sizeof(e_date), "%a, %d %b %Y %H:%M:%S %Z", etm);
+    char rfc7231_expires[RFC7231_MAX_LENGTH];
+    rfc7231_datetime(rfc7231_expires, sizeof(rfc7231_expires), now_realtime_sec() + registry.persons_expiration);
 
-    buffer_sprintf(w->response.header, "Set-Cookie: " NETDATA_REGISTRY_COOKIE_NAME "=%s; Expires=%s\r\n", guid, e_date);
-    buffer_sprintf(w->response.header, "Set-Cookie: " NETDATA_REGISTRY_COOKIE_NAME "=%s; SameSite=Strict; Expires=%s\r\n", guid, e_date);
+    buffer_sprintf(w->response.header, "Set-Cookie: " NETDATA_REGISTRY_COOKIE_NAME "=%s; Expires=%s\r\n", guid, rfc7231_expires);
+    buffer_sprintf(w->response.header, "Set-Cookie: " NETDATA_REGISTRY_COOKIE_NAME "=%s; SameSite=Strict; Expires=%s\r\n", guid, rfc7231_expires);
     if(registry.enable_cookies_samesite_secure)
-        buffer_sprintf(w->response.header, "Set-Cookie: " NETDATA_REGISTRY_COOKIE_NAME "=%s; Expires=%s; SameSite=None; Secure\r\n", guid, e_date);
+        buffer_sprintf(w->response.header, "Set-Cookie: " NETDATA_REGISTRY_COOKIE_NAME "=%s; Expires=%s; SameSite=None; Secure\r\n", guid, rfc7231_expires);
 
     if(registry.registry_domain && *registry.registry_domain) {
-        buffer_sprintf(w->response.header, "Set-Cookie: " NETDATA_REGISTRY_COOKIE_NAME "=%s; Expires=%s; Domain=%s\r\n", guid, e_date, registry.registry_domain);
-        buffer_sprintf(w->response.header, "Set-Cookie: " NETDATA_REGISTRY_COOKIE_NAME "=%s; Expires=%s; Domain=%s; SameSite=Strict\r\n", guid, e_date, registry.registry_domain);
+        buffer_sprintf(w->response.header, "Set-Cookie: " NETDATA_REGISTRY_COOKIE_NAME "=%s; Expires=%s; Domain=%s\r\n", guid, rfc7231_expires, registry.registry_domain);
+        buffer_sprintf(w->response.header, "Set-Cookie: " NETDATA_REGISTRY_COOKIE_NAME "=%s; Expires=%s; Domain=%s; SameSite=Strict\r\n", guid, rfc7231_expires, registry.registry_domain);
         if(registry.enable_cookies_samesite_secure)
-            buffer_sprintf(w->response.header, "Set-Cookie: " NETDATA_REGISTRY_COOKIE_NAME "=%s; Expires=%s; Domain=%s; SameSite=None; Secure\r\n", guid, e_date, registry.registry_domain);
+            buffer_sprintf(w->response.header, "Set-Cookie: " NETDATA_REGISTRY_COOKIE_NAME "=%s; Expires=%s; Domain=%s; SameSite=None; Secure\r\n", guid, rfc7231_expires, registry.registry_domain);
     }
 
     w->response.has_cookies = true;
@@ -163,7 +161,7 @@ void registry_update_cloud_base_url() {
 // ----------------------------------------------------------------------------
 // public HELLO request
 
-int registry_request_hello_json(RRDHOST *host, struct web_client *w) {
+int registry_request_hello_json(RRDHOST *host, struct web_client *w, bool do_not_track) {
     registry_json_header(host, w, "hello", REGISTRY_STATUS_OK);
 
     if(host->node_id)
@@ -191,7 +189,7 @@ int registry_request_hello_json(RRDHOST *host, struct web_client *w) {
     buffer_json_member_add_string(w->response.data, "cloud_base_url", registry.cloud_base_url);
 
     buffer_json_member_add_string(w->response.data, "registry", registry.registry_to_announce);
-    buffer_json_member_add_boolean(w->response.data, "anonymous_statistics", netdata_anonymous_statistics_enabled);
+    buffer_json_member_add_boolean(w->response.data, "anonymous_statistics", do_not_track ? false : netdata_anonymous_statistics_enabled);
     buffer_json_member_add_boolean(w->response.data, "X-Netdata-Auth", true);
 
     buffer_json_member_add_array(w->response.data, "nodes");

@@ -70,10 +70,10 @@ static inline void make_chart_obsolete(char *name, const char *id_modifier)
     RRDSET *st = NULL;
 
     if (likely(name && id_modifier)) {
-        snprintfz(id, 50, "mdstat.%s_%s", name, id_modifier);
+        snprintfz(id, sizeof(id) - 1, "mdstat.%s_%s", name, id_modifier);
         st = rrdset_find_active_byname_localhost(id);
         if (likely(st))
-            rrdset_is_obsolete(st);
+            rrdset_is_obsolete___safe_from_collector_thread(st);
     }
 }
 
@@ -409,7 +409,7 @@ int do_proc_mdstat(int update_every, usec_t dt)
                 update_every,
                 RRDSET_TYPE_LINE);
 
-            rrdset_isnot_obsolete(st_mdstat_health);
+            rrdset_isnot_obsolete___safe_from_collector_thread(st_mdstat_health);
         }
 
         if (!redundant_num) {
@@ -438,10 +438,10 @@ int do_proc_mdstat(int update_every, usec_t dt)
 
         if (likely(raid->redundant)) {
             if (likely(do_disks)) {
-                snprintfz(id, 50, "%s_disks", raid->name);
+                snprintfz(id, sizeof(id) - 1, "%s_disks", raid->name);
 
                 if (unlikely(!raid->st_disks && !(raid->st_disks = rrdset_find_active_byname_localhost(id)))) {
-                    snprintfz(family, 50, "%s (%s)", raid->name, raid->level);
+                    snprintfz(family, sizeof(family) - 1, "%s (%s)", raid->name, raid->level);
 
                     raid->st_disks = rrdset_create_localhost(
                         "mdstat",
@@ -457,7 +457,7 @@ int do_proc_mdstat(int update_every, usec_t dt)
                         update_every,
                         RRDSET_TYPE_STACKED);
 
-                    rrdset_isnot_obsolete(raid->st_disks);
+                    rrdset_isnot_obsolete___safe_from_collector_thread(raid->st_disks);
 
                     add_labels_to_mdstat(raid, raid->st_disks);
                 }
@@ -473,10 +473,10 @@ int do_proc_mdstat(int update_every, usec_t dt)
             }
 
             if (likely(do_mismatch)) {
-                snprintfz(id, 50, "%s_mismatch", raid->name);
+                snprintfz(id, sizeof(id) - 1, "%s_mismatch", raid->name);
 
                 if (unlikely(!raid->st_mismatch_cnt && !(raid->st_mismatch_cnt = rrdset_find_active_byname_localhost(id)))) {
-                    snprintfz(family, 50, "%s (%s)", raid->name, raid->level);
+                    snprintfz(family, sizeof(family) - 1, "%s (%s)", raid->name, raid->level);
 
                     raid->st_mismatch_cnt = rrdset_create_localhost(
                         "mdstat",
@@ -492,7 +492,7 @@ int do_proc_mdstat(int update_every, usec_t dt)
                         update_every,
                         RRDSET_TYPE_LINE);
 
-                    rrdset_isnot_obsolete(raid->st_mismatch_cnt);
+                    rrdset_isnot_obsolete___safe_from_collector_thread(raid->st_mismatch_cnt);
 
                     add_labels_to_mdstat(raid, raid->st_mismatch_cnt);
                 }
@@ -505,10 +505,10 @@ int do_proc_mdstat(int update_every, usec_t dt)
             }
 
             if (likely(do_operations)) {
-                snprintfz(id, 50, "%s_operation", raid->name);
+                snprintfz(id, sizeof(id) - 1, "%s_operation", raid->name);
 
                 if (unlikely(!raid->st_operation && !(raid->st_operation = rrdset_find_active_byname_localhost(id)))) {
-                    snprintfz(family, 50, "%s (%s)", raid->name, raid->level);
+                    snprintfz(family, sizeof(family) - 1, "%s (%s)", raid->name, raid->level);
 
                     raid->st_operation = rrdset_create_localhost(
                         "mdstat",
@@ -524,7 +524,7 @@ int do_proc_mdstat(int update_every, usec_t dt)
                         update_every,
                         RRDSET_TYPE_LINE);
 
-                    rrdset_isnot_obsolete(raid->st_operation);
+                    rrdset_isnot_obsolete___safe_from_collector_thread(raid->st_operation);
 
                     add_labels_to_mdstat(raid, raid->st_operation);
                 }
@@ -544,9 +544,9 @@ int do_proc_mdstat(int update_every, usec_t dt)
                 rrddim_set_by_pointer(raid->st_operation, raid->rd_reshape, raid->reshape);
                 rrdset_done(raid->st_operation);
 
-                snprintfz(id, 50, "%s_finish", raid->name);
+                snprintfz(id, sizeof(id) - 1, "%s_finish", raid->name);
                 if (unlikely(!raid->st_finish && !(raid->st_finish = rrdset_find_active_byname_localhost(id)))) {
-                    snprintfz(family, 50, "%s (%s)", raid->name, raid->level);
+                    snprintfz(family, sizeof(family) - 1, "%s (%s)", raid->name, raid->level);
 
                     raid->st_finish = rrdset_create_localhost(
                         "mdstat",
@@ -561,7 +561,7 @@ int do_proc_mdstat(int update_every, usec_t dt)
                         NETDATA_CHART_PRIO_MDSTAT_FINISH + raid_idx * 10,
                         update_every, RRDSET_TYPE_LINE);
 
-                    rrdset_isnot_obsolete(raid->st_finish);
+                    rrdset_isnot_obsolete___safe_from_collector_thread(raid->st_finish);
 
                     add_labels_to_mdstat(raid, raid->st_finish);
                 }
@@ -572,9 +572,9 @@ int do_proc_mdstat(int update_every, usec_t dt)
                 rrddim_set_by_pointer(raid->st_finish, raid->rd_finish_in, raid->finish_in);
                 rrdset_done(raid->st_finish);
 
-                snprintfz(id, 50, "%s_speed", raid->name);
+                snprintfz(id, sizeof(id) - 1, "%s_speed", raid->name);
                 if (unlikely(!raid->st_speed && !(raid->st_speed = rrdset_find_active_byname_localhost(id)))) {
-                    snprintfz(family, 50, "%s (%s)", raid->name, raid->level);
+                    snprintfz(family, sizeof(family) - 1, "%s (%s)", raid->name, raid->level);
 
                     raid->st_speed = rrdset_create_localhost(
                         "mdstat",
@@ -590,7 +590,7 @@ int do_proc_mdstat(int update_every, usec_t dt)
                         update_every,
                         RRDSET_TYPE_LINE);
 
-                    rrdset_isnot_obsolete(raid->st_speed);
+                    rrdset_isnot_obsolete___safe_from_collector_thread(raid->st_speed);
 
                     add_labels_to_mdstat(raid, raid->st_speed);
                 }
@@ -603,10 +603,10 @@ int do_proc_mdstat(int update_every, usec_t dt)
             }
         } else {
             if (likely(do_nonredundant)) {
-                snprintfz(id, 50, "%s_availability", raid->name);
+                snprintfz(id, sizeof(id) - 1, "%s_availability", raid->name);
 
                 if (unlikely(!raid->st_nonredundant && !(raid->st_nonredundant = rrdset_find_active_localhost(id)))) {
-                    snprintfz(family, 50, "%s (%s)", raid->name, raid->level);
+                    snprintfz(family, sizeof(family) - 1, "%s (%s)", raid->name, raid->level);
 
                     raid->st_nonredundant = rrdset_create_localhost(
                         "mdstat",
@@ -622,7 +622,7 @@ int do_proc_mdstat(int update_every, usec_t dt)
                         update_every,
                         RRDSET_TYPE_LINE);
 
-                    rrdset_isnot_obsolete(raid->st_nonredundant);
+                    rrdset_isnot_obsolete___safe_from_collector_thread(raid->st_nonredundant);
 
                     add_labels_to_mdstat(raid, raid->st_nonredundant);
                 }

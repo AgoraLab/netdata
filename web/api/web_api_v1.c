@@ -444,7 +444,7 @@ inline int web_client_api_request_v1_alarm_count(RRDHOST *host, struct web_clien
 }
 
 inline int web_client_api_request_v1_alarm_log(RRDHOST *host, struct web_client *w, char *url) {
-    uint32_t after = 0;
+    time_t after = 0;
     char *chart = NULL;
 
     while(url) {
@@ -455,7 +455,7 @@ inline int web_client_api_request_v1_alarm_log(RRDHOST *host, struct web_client 
         if(!name || !*name) continue;
         if(!value || !*value) continue;
 
-        if (!strcmp(name, "after")) after = (uint32_t)strtoul(value, NULL, 0);
+        if (!strcmp(name, "after")) after = (time_t) strtoul(value, NULL, 0);
         else if (!strcmp(name, "chart")) chart = value;
     }
 
@@ -644,7 +644,7 @@ inline int web_client_api_request_v1_charts(RRDHOST *host, struct web_client *w,
 
     buffer_flush(w->response.data);
     w->response.data->content_type = CT_APPLICATION_JSON;
-    charts2json(host, w->response.data, 0, 0);
+    charts2json(host, w->response.data);
     return HTTP_RESP_OK;
 }
 
@@ -1013,11 +1013,7 @@ inline int web_client_api_request_v1_registry(RRDHOST *host, struct web_client *
 #endif /* NETDATA_INTERNAL_CHECKS */
     }
 
-    if(unlikely(respect_web_browser_do_not_track_policy && web_client_has_donottrack(w))) {
-        buffer_flush(w->response.data);
-        buffer_sprintf(w->response.data, "Your web browser is sending 'DNT: 1' (Do Not Track). The registry requires persistent cookies on your browser to work.");
-        return HTTP_RESP_BAD_REQUEST;
-    }
+    bool do_not_track = respect_web_browser_do_not_track_policy && web_client_has_donottrack(w);
 
     if(unlikely(action == 'H')) {
         // HELLO request, dashboard ACL
@@ -1029,6 +1025,12 @@ inline int web_client_api_request_v1_registry(RRDHOST *host, struct web_client *
         // everything else, registry ACL
         if(unlikely(!web_client_can_access_registry(w)))
             return web_client_permission_denied(w);
+
+        if(unlikely(do_not_track)) {
+            buffer_flush(w->response.data);
+            buffer_sprintf(w->response.data, "Your web browser is sending 'DNT: 1' (Do Not Track). The registry requires persistent cookies on your browser to work.");
+            return HTTP_RESP_BAD_REQUEST;
+        }
     }
 
     buffer_no_cacheable(w->response.data);
@@ -1079,7 +1081,7 @@ inline int web_client_api_request_v1_registry(RRDHOST *host, struct web_client *
             return registry_request_switch_json(host, w, person_guid, machine_guid, machine_url, to_person_guid, now_realtime_sec());
 
         case 'H':
-            return registry_request_hello_json(host, w);
+            return registry_request_hello_json(host, w, do_not_track);
 
         default:
             buffer_flush(w->response.data);
@@ -1270,12 +1272,8 @@ inline int web_client_api_request_v1_info_fill_buffer(RRDHOST *host, BUFFER *wb)
     buffer_json_member_add_boolean(wb, "web-enabled", web_server_mode != WEB_SERVER_MODE_NONE);
     buffer_json_member_add_boolean(wb, "stream-enabled", default_rrdpush_enabled);
 
-#ifdef  ENABLE_RRDPUSH_COMPRESSION
     buffer_json_member_add_boolean(wb, "stream-compression",
-                                   host->sender && stream_has_capability(host->sender, STREAM_CAP_COMPRESSION));
-#else // ! ENABLE_RRDPUSH_COMPRESSION
-    buffer_json_member_add_boolean(wb, "stream-compression", false);
-#endif  // ENABLE_RRDPUSH_COMPRESSION
+                                   host->sender && host->sender->compressor.initialized);
 
 #ifdef ENABLE_HTTPS
     buffer_json_member_add_boolean(wb, "https-enabled", true);
@@ -1313,7 +1311,7 @@ int web_client_api_request_v1_ml_info(RRDHOST *host, struct web_client *w, char 
     (void) url;
 
     if (!netdata_ready)
-        return HTTP_RESP_BACKEND_FETCH_FAILED;
+        return HTTP_RESP_SERVICE_UNAVAILABLE;
 
     BUFFER *wb = w->response.data;
     buffer_flush(wb);
@@ -1332,7 +1330,7 @@ int web_client_api_request_v1_ml_models(RRDHOST *host, struct web_client *w, cha
     (void) url;
 
     if (!netdata_ready)
-        return HTTP_RESP_BACKEND_FETCH_FAILED;
+        return HTTP_RESP_SERVICE_UNAVAILABLE;
 
     BUFFER *wb = w->response.data;
     buffer_flush(wb);
@@ -1346,7 +1344,7 @@ int web_client_api_request_v1_ml_models(RRDHOST *host, struct web_client *w, cha
 
 inline int web_client_api_request_v1_info(RRDHOST *host, struct web_client *w, char *url) {
     (void)url;
-    if (!netdata_ready) return HTTP_RESP_BACKEND_FETCH_FAILED;
+    if (!netdata_ready) return HTTP_RESP_SERVICE_UNAVAILABLE;
     BUFFER *wb = w->response.data;
     buffer_flush(wb);
     wb->content_type = CT_APPLICATION_JSON;
@@ -1360,7 +1358,7 @@ inline int web_client_api_request_v1_info(RRDHOST *host, struct web_client *w, c
 static int web_client_api_request_v1_aclk_state(RRDHOST *host, struct web_client *w, char *url) {
     UNUSED(url);
     UNUSED(host);
-    if (!netdata_ready) return HTTP_RESP_BACKEND_FETCH_FAILED;
+    if (!netdata_ready) return HTTP_RESP_SERVICE_UNAVAILABLE;
 
     BUFFER *wb = w->response.data;
     buffer_flush(wb);
@@ -1386,7 +1384,7 @@ int web_client_api_request_v1_weights(RRDHOST *host, struct web_client *w, char 
 
 int web_client_api_request_v1_function(RRDHOST *host, struct web_client *w, char *url) {
     if (!netdata_ready)
-        return HTTP_RESP_BACKEND_FETCH_FAILED;
+        return HTTP_RESP_SERVICE_UNAVAILABLE;
 
     int timeout = 0;
     const char *function = NULL;
@@ -1412,12 +1410,17 @@ int web_client_api_request_v1_function(RRDHOST *host, struct web_client *w, char
     wb->content_type = CT_APPLICATION_JSON;
     buffer_no_cacheable(wb);
 
-    return rrd_call_function_and_wait(host, wb, timeout, function);
+    char transaction[UUID_COMPACT_STR_LEN];
+    uuid_unparse_lower_compact(w->transaction, transaction);
+
+    return rrd_function_run(host, wb, timeout, function, true, transaction,
+                            NULL, NULL,
+                            web_client_interrupt_callback, w, NULL);
 }
 
 int web_client_api_request_v1_functions(RRDHOST *host, struct web_client *w, char *url __maybe_unused) {
     if (!netdata_ready)
-        return HTTP_RESP_BACKEND_FETCH_FAILED;
+        return HTTP_RESP_SERVICE_UNAVAILABLE;
 
     BUFFER *wb = w->response.data;
     buffer_flush(wb);
@@ -1500,7 +1503,7 @@ static void web_client_api_v1_dbengine_stats_for_tier(BUFFER *wb, size_t tier) {
 }
 int web_client_api_request_v1_dbengine_stats(RRDHOST *host __maybe_unused, struct web_client *w, char *url __maybe_unused) {
     if (!netdata_ready)
-        return HTTP_RESP_BACKEND_FETCH_FAILED;
+        return HTTP_RESP_SERVICE_UNAVAILABLE;
 
     BUFFER *wb = w->response.data;
     buffer_flush(wb);

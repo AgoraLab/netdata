@@ -108,7 +108,7 @@ connectivity is not available.
       Copyright 2016, Hyunje Alex Jun and other contributors
       [MIT License](https://github.com/noraesae/perfect-scrollbar/blob/master/LICENSE)
 
--   [FontAwesome](https://fortawesome.github.io/Font-Awesome/)
+-   [FontAwesome](https://github.com/FortAwesome/Font-Awesome)
 
       Created by Dave Gandy
       Font license: [SIL OFL 1.1](http://scripts.sil.org/OFL)
@@ -141,7 +141,7 @@ connectivity is not available.
       Copyright 2014, Pavel Rojtberg
       [LGPL 2.1 License](http://opensource.org/licenses/LGPL-2.1)
 
--   [PyYAML](https://bitbucket.org/blackjack/pysensors)
+-   [PyYAML](https://pypi.org/project/PyYAML/)
 
       Copyright 2006, Kirill Simonov
       [MIT License](https://github.com/yaml/pyyaml/blob/master/LICENSE)
@@ -189,5 +189,10 @@ connectivity is not available.
 
     Copyright March 2010 by Université de Montréal, Richard Simard and Pierre L'Ecuyer
     [GPL 3.0](https://www.gnu.org/licenses/gpl-3.0.en.html)
+
+-   [xxHash](https://github.com/Cyan4973/xxHash)
+
+    Copyright (c) 2012-2021 Yann Collet
+    [BSD](https://github.com/Cyan4973/xxHash/blob/dev/LICENSE)
 
 

@@ -648,13 +648,17 @@ static int read_clk_freq_file(procfile **p_ff, const char *const pathname, colle
         *p_ff = procfile_open(pathname, NULL, PROCFILE_FLAG_NO_ERROR_ON_FILE_IO);
         if(unlikely(!*p_ff)) return -2;
     }
-    
+
     if(unlikely(NULL == (*p_ff = procfile_readall(*p_ff)))) return -3;
 
     for(size_t l = 0; l < procfile_lines(*p_ff) ; l++) {
+        char *str_with_units = NULL;
+        if((*p_ff)->lines->lines[l].words >= 3 && !strcmp(procfile_lineword((*p_ff), l, 2), "*")) //format: X: collected_number *
+            str_with_units = procfile_lineword((*p_ff), l, 1);
+        else if ((*p_ff)->lines->lines[l].words == 2 && !strcmp(procfile_lineword((*p_ff), l, 1), "*")) //format:   collected_number *
+            str_with_units = procfile_lineword((*p_ff), l, 0);
 
-        if((*p_ff)->lines->lines[l].words >= 3 && !strcmp(procfile_lineword((*p_ff), l, 2), "*")){
-            char *str_with_units = procfile_lineword((*p_ff), l, 1);
+        if (str_with_units) {
             char *delim = strchr(str_with_units, 'M');
             char str_without_units[10];
             memcpy(str_without_units, str_with_units, delim - str_with_units);
@@ -707,7 +711,7 @@ static int do_rrd_util_gpu(struct card *const c){
     else {
         collector_error("Cannot read util_gpu for %s: [%s]", c->pathname, c->id.marketing_name);
         freez((void *) c->pathname_util_gpu);
-        rrdset_is_obsolete(c->st_util_gpu);
+        rrdset_is_obsolete___safe_from_collector_thread(c->st_util_gpu);
         return 1;
     }
 }
@@ -721,7 +725,7 @@ static int do_rrd_util_mem(struct card *const c){
     else {
         collector_error("Cannot read util_mem for %s: [%s]", c->pathname, c->id.marketing_name);
         freez((void *) c->pathname_util_mem);
-        rrdset_is_obsolete(c->st_util_mem);
+        rrdset_is_obsolete___safe_from_collector_thread(c->st_util_mem);
         return 1;
     }
 }
@@ -735,7 +739,7 @@ static int do_rrd_clk_gpu(struct card *const c){
     else {
         collector_error("Cannot read clk_gpu for %s: [%s]", c->pathname, c->id.marketing_name);
         freez((void *) c->pathname_clk_gpu);
-        rrdset_is_obsolete(c->st_clk_gpu);
+        rrdset_is_obsolete___safe_from_collector_thread(c->st_clk_gpu);
         return 1;
     }
 }
@@ -749,7 +753,7 @@ static int do_rrd_clk_mem(struct card *const c){
     else {
         collector_error("Cannot read clk_mem for %s: [%s]", c->pathname, c->id.marketing_name);
         freez((void *) c->pathname_clk_mem);
-        rrdset_is_obsolete(c->st_clk_mem);
+        rrdset_is_obsolete___safe_from_collector_thread(c->st_clk_mem);
         return 1;
     }
 }
@@ -771,8 +775,8 @@ static int do_rrd_vram(struct card *const c){
         collector_error("Cannot read used_vram for %s: [%s]", c->pathname, c->id.marketing_name);
         freez((void *) c->pathname_mem_used_vram);
         freez((void *) c->pathname_mem_total_vram);
-        rrdset_is_obsolete(c->st_mem_usage_perc_vram);
-        rrdset_is_obsolete(c->st_mem_usage_vram);
+        rrdset_is_obsolete___safe_from_collector_thread(c->st_mem_usage_perc_vram);
+        rrdset_is_obsolete___safe_from_collector_thread(c->st_mem_usage_vram);
         return 1;
     }
 }
@@ -794,8 +798,8 @@ static int do_rrd_vis_vram(struct card *const c){
         collector_error("Cannot read used_vis_vram for %s: [%s]", c->pathname, c->id.marketing_name);
         freez((void *) c->pathname_mem_used_vis_vram);
         freez((void *) c->pathname_mem_total_vis_vram);
-        rrdset_is_obsolete(c->st_mem_usage_perc_vis_vram);
-        rrdset_is_obsolete(c->st_mem_usage_vis_vram);
+        rrdset_is_obsolete___safe_from_collector_thread(c->st_mem_usage_perc_vis_vram);
+        rrdset_is_obsolete___safe_from_collector_thread(c->st_mem_usage_vis_vram);
         return 1;
     }
 }
@@ -817,8 +821,8 @@ static int do_rrd_gtt(struct card *const c){
         collector_error("Cannot read used_gtt for %s: [%s]", c->pathname, c->id.marketing_name);
         freez((void *) c->pathname_mem_used_gtt);
         freez((void *) c->pathname_mem_total_gtt);
-        rrdset_is_obsolete(c->st_mem_usage_perc_gtt);
-        rrdset_is_obsolete(c->st_mem_usage_gtt);
+        rrdset_is_obsolete___safe_from_collector_thread(c->st_mem_usage_perc_gtt);
+        rrdset_is_obsolete___safe_from_collector_thread(c->st_mem_usage_gtt);
         return 1;
     }
 }

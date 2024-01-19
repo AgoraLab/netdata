@@ -140,6 +140,7 @@ static void ebpf_obsolete_mdflush_global(ebpf_module_t *em)
 {
     ebpf_write_chart_obsolete("mdstat",
                               "mdstat_flush",
+                              "",
                               "MD flushes",
                               "flushes",
                               "flush (eBPF)",
@@ -345,19 +346,19 @@ static void mdflush_collector(ebpf_module_t *em)
     int maps_per_core = em->maps_per_core;
     uint32_t running_time = 0;
     uint32_t lifetime = em->lifetime;
-    while (!ebpf_exit_plugin && running_time < lifetime) {
+    while (!ebpf_plugin_exit && running_time < lifetime) {
         (void)heartbeat_next(&hb, USEC_PER_SEC);
 
-        if (ebpf_exit_plugin || ++counter != update_every)
+        if (ebpf_plugin_exit || ++counter != update_every)
             continue;
 
         counter = 0;
         mdflush_read_count_map(maps_per_core);
         pthread_mutex_lock(&lock);
         // write dims now for all hitherto discovered devices.
-        write_begin_chart("mdstat", "mdstat_flush");
+        ebpf_write_begin_chart("mdstat", "mdstat_flush", "");
         avl_traverse_lock(&mdflush_pub, mdflush_write_dims, NULL);
-        write_end_chart();
+        ebpf_write_end_chart();
 
         pthread_mutex_unlock(&lock);
 

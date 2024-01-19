@@ -151,7 +151,7 @@ int do_sys_devices_virtual_powercap(int update_every, const char *name __maybe_u
                     update_every);
 
             fprintf(stdout,
-                    "CLABEL 'zone' '%s' 0\n"
+                    "CLABEL 'zone' '%s' 1\n"
                     "CLABEL_COMMIT\n",
                     zone->name);
 
@@ -171,7 +171,7 @@ int do_sys_devices_virtual_powercap(int update_every, const char *name __maybe_u
                     update_every);
 
             fprintf(stdout,
-                    "CLABEL 'zone' '%s' 0\n"
+                    "CLABEL 'zone' '%s' 1\n"
                     "CLABEL_COMMIT\n",
                     zone->name);
 
@@ -186,7 +186,7 @@ int do_sys_devices_virtual_powercap(int update_every, const char *name __maybe_u
         if(get_measurement(zone->path, &zone->energy_uj)) {
             fprintf(stdout,
                     "BEGIN '%s'\n"
-                    "SET power = %lld\n"
+                    "SET power = %llu\n"
                     "END\n"
                     , zone->zone_chart_id
                     , zone->energy_uj);
@@ -200,7 +200,7 @@ int do_sys_devices_virtual_powercap(int update_every, const char *name __maybe_u
             for (struct zone_t *subzone = zone->subzones; subzone; subzone = subzone->next) {
                 if(get_measurement(subzone->path, &subzone->energy_uj)) {
                     fprintf(stdout,
-                            "SET '%s' = %lld\n",
+                            "SET '%s' = %llu\n",
                             subzone->name,
                             subzone->energy_uj);
                 }

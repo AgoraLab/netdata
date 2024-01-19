@@ -240,8 +240,8 @@ int do_proc_sys_devices_pci_aer(int update_every, usec_t dt __maybe_unused) {
             continue;
 
         if(!a->st) {
-            const char *title;
-            const char *context;
+            const char *title = "";
+            const char *context = "";
 
             switch(a->type) {
                 case AER_DEV_NONFATAL:
@@ -267,6 +267,11 @@ int do_proc_sys_devices_pci_aer(int update_every, usec_t dt __maybe_unused) {
                 case AER_ROOTPORT_TOTAL_ERR_FATAL:
                     title = "PCI Root-Port Advanced Error Reporting (AER) Fatal Errors";
                     context = "pci.rootport_aer_fatal";
+                    break;
+
+                default:
+                    title = "Unknown PCI Advanced Error Reporting";
+                    context = "pci.unknown_aer";
                     break;
             }
 

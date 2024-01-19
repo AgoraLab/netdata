@@ -54,6 +54,8 @@ else
   AC_CHECK_TOOL([AR], [ar])
 fi
 
+CFLAGS="$CFLAGS -fexceptions"
+
 # -----------------------------------------------------------------------------
 # configurable options
 
@@ -74,6 +76,18 @@ AC_ARG_ENABLE(
     [AS_HELP_STRING([--enable-plugin-systemd-journal], [enable systemd-journal plugin @<:@default autodetect@:>@])],
     ,
     [enable_plugin_systemd_journal="detect"]
+)
+AC_ARG_ENABLE(
+    [logsmanagement],
+    [AS_HELP_STRING([--disable-logsmanagement], [Disable logsmanagement @<:@default autodetect@:>@])],
+    ,
+    [enable_logsmanagement="detect"]
+)
+AC_ARG_ENABLE(
+    [logsmanagement_tests],
+    [AS_HELP_STRING([--enable-logsmanagement-tests], [Enable logsmanagement tests @<:@default disabled@:>@])],
+    ,
+    [enable_logsmanagement_tests="no"]
 )
 AC_ARG_ENABLE(
     [plugin-cups],
@@ -206,6 +220,12 @@ AC_ARG_ENABLE(
     [AS_HELP_STRING([--enable-ml], [Enable anomaly detection @<:@default autodetect@:>@])],
     ,
     [enable_ml="detect"]
+)
+AC_ARG_ENABLE(
+    [gtests],
+    [AS_HELP_STRING([--enable-gtests], [Enable google tests @<:@default no@:>@])],
+    ,
+    [enable_gtests="no"]
 )
 AC_ARG_ENABLE(
     [aclk_ssl_debug],
@@ -555,15 +575,90 @@ OPTIONAL_UV_LIBS="${UV_LIBS}"
 
 AC_CHECK_LIB(
     [lz4],
-    [LZ4_initStream],
+    [LZ4_createStream],
     [LZ4_LIBS_FAST="-llz4"]
 )
 
 AC_CHECK_LIB(
     [lz4],
-    [LZ4_compress_default],
+    [LZ4_compress_fast_continue],
     [LZ4_LIBS="-llz4"]
 )
+
+# -----------------------------------------------------------------------------
+# libcurl
+
+PKG_CHECK_MODULES(
+    [LIBCURL],
+    [libcurl],
+    [AC_CHECK_LIB(
+        [curl],
+        [curl_easy_init],
+        [have_libcurl=yes],
+        [have_libcurl=no]
+    )],
+    [have_libcurl=no]
+)
+
+if test "x$have_libcurl" = "xyes"; then
+    AC_DEFINE([HAVE_CURL], [1], [libcurl usability])
+    OPTIONAL_CURL_LIBS="-lcurl"
+fi
+
+# -----------------------------------------------------------------------------
+# PCRE2
+
+PKG_CHECK_MODULES(
+    [LIBPCRE2],
+    [libpcre2-8],
+    [AC_CHECK_LIB(
+        [pcre2-8],
+        [pcre2_compile_8],
+        [have_libpcre2=yes],
+        [have_libpcre2=no]
+    )],
+    [have_libpcre2=no]
+)
+
+if test "x$have_libpcre2" = "xyes"; then
+    AC_DEFINE([HAVE_PCRE2], [1], [PCRE2 usability])
+    OPTIONAL_PCRE2_LIBS="-lpcre2-8"
+fi
+
+AM_CONDITIONAL([ENABLE_LOG2JOURNAL], [test "${have_libpcre2}" = "yes"])
+
+# -----------------------------------------------------------------------------
+# zstd
+
+AC_CHECK_LIB([zstd], [ZSTD_createCStream, ZSTD_createDStream],
+             [LIBZSTD_FOUND=yes],
+             [LIBZSTD_FOUND=no])
+
+if test "x$LIBZSTD_FOUND" = "xyes"; then
+    AC_DEFINE([ENABLE_ZSTD], [1], [libzstd usability])
+    OPTIONAL_ZSTD_LIBS="-lzstd"
+fi
+
+# -----------------------------------------------------------------------------
+# brotli
+
+AC_CHECK_LIB([brotlienc], [BrotliEncoderCreateInstance, BrotliEncoderCompressStream],
+             [LIBBROTLIENC_FOUND=yes],
+             [LIBBROTLIENC_FOUND=no])
+
+if test "x$LIBBROTLIENC_FOUND" = "xyes"; then
+    AC_DEFINE([ENABLE_BROTLIENC], [1], [libbrotlienc usability])
+    OPTIONAL_BROTLIENC_LIBS="-lbrotlienc"
+fi
+
+AC_CHECK_LIB([brotlidec], [BrotliDecoderCreateInstance, BrotliDecoderDecompressStream],
+             [LIBBROTLIDEC_FOUND=yes],
+             [LIBBROTLIDEC_FOUND=no])
+
+if test "x$LIBBROTLIDEC_FOUND" = "xyes"; then
+    AC_DEFINE([ENABLE_BROTLIDEC], [1], [libbrotlidec usability])
+    OPTIONAL_BROTLIDEC_LIBS="-lbrotlidec"
+fi
 
 # -----------------------------------------------------------------------------
 # zlib
@@ -650,10 +745,10 @@ AC_C_BIGENDIAN([],
     [AC_MSG_ERROR([Could not find out system endiannnes])])
 
 AC_CHECK_SIZEOF(void *)
-if test "$ac_cv_sizeof_void_p" = 8; then 
+if test "$ac_cv_sizeof_void_p" = 8; then
     AC_MSG_RESULT(Detected 64-bit Build Environment)
     	LIBJUDY_CFLAGS="$LIBJUDY_CFLAGS -DJU_64BIT"
-else 
+else
     AC_MSG_RESULT(Detected 32-bit Build Environment)
         LIBJUDY_CFLAGS="$LIBJUDY_CFLAGS -UJU_64BIT"
 fi
@@ -702,7 +797,7 @@ if test "${enable_lz4}" != "no"; then
         AC_TRY_LINK(
             [ #include <lz4.h> ],
             [
-                LZ4_stream_t* stream = LZ4_initStream(NULL, 0);
+                LZ4_stream_t* stream = LZ4_createStream();
             ],
             [ enable_lz4="yes"],
             [ enable_lz4="no" ]
@@ -770,6 +865,26 @@ AC_MSG_RESULT([${enable_jsonc}])
 AM_CONDITIONAL([ENABLE_JSONC], [test "${enable_jsonc}" = "yes"])
 
 # -----------------------------------------------------------------------------
+# libyaml
+
+PKG_CHECK_MODULES(
+    [LIBYAML],
+    [yaml-0.1],
+    [AC_CHECK_LIB(
+        [yaml],
+        [yaml_parser_initialize],
+        [have_libyaml=yes],
+        [have_libyaml=no]
+    )],
+    [have_libyaml=no]
+)
+
+if test "x$have_libyaml" = "xyes"; then
+    AC_DEFINE([HAVE_LIBYAML], [1], [libyaml usability])
+    OPTIONAL_YAML_LIBS="-lyaml"
+fi
+
+# -----------------------------------------------------------------------------
 # YAML
 
 if test -z "${YAML_LIBS}"; then
@@ -835,6 +950,27 @@ if test "${enable_pedantic}" = "yes"; then
     CFLAGS="${CFLAGS} -pedantic -Wall -Wextra -Wno-long-long"
 fi
 
+# -----------------------------------------------------------------------------
+# dlsym check
+
+AC_MSG_CHECKING(whether we can use dlsym)
+OLD_LIBS="${LIBS}"
+LIBS="-ldl"
+AC_LINK_IFELSE([AC_LANG_SOURCE([[
+  #include <dlfcn.h>
+  static void *(*libc_malloc)(size_t);
+  int main() {
+    libc_malloc = dlsym(RTLD_NEXT, "malloc");
+  }
+]])], CAN_USE_DLSYM=yes, CAN_USE_DLSYM=no)
+LIBS="${OLD_LIBS}"
+AC_MSG_RESULT($CAN_USE_DLSYM)
+
+if test "x$CAN_USE_DLSYM" = xyes; then
+    AC_DEFINE([HAVE_DLSYM], [1], [dlsym usability])
+    OPTIONAL_DL_LIBS="-ldl"
+fi
+AC_SUBST([OPTIONAL_DL_LIBS])
 
 # -----------------------------------------------------------------------------
 # memory allocation library
@@ -901,9 +1037,6 @@ if test "${enable_h2o}" != "no"; then
         OPTIONAL_SSL_CFLAGS="${SSL_CFLAGS}"
         OPTIONAL_SSL_LIBS="${SSL_LIBS}"
     else
-        can_build_h2o="no"
-    fi
-    if test "${with_zlib}" != "yes"; then
         can_build_h2o="no"
     fi
     AC_MSG_RESULT([${can_build_h2o}])
@@ -1063,7 +1196,6 @@ fi
 AC_MSG_RESULT([${enable_plugin_apps}])
 AM_CONDITIONAL([ENABLE_PLUGIN_APPS], [test "${enable_plugin_apps}" = "yes"])
 
-
 # -----------------------------------------------------------------------------
 # freeipmi.plugin - libipmimonitoring
 
@@ -1141,7 +1273,43 @@ fi
 AC_MSG_RESULT([${enable_plugin_systemd_journal}])
 AM_CONDITIONAL([ENABLE_PLUGIN_SYSTEMD_JOURNAL], [test "${enable_plugin_systemd_journal}" = "yes"])
 
+AC_CHECK_LIB([systemd], [sd_journal_open_files_fd], [have_sd_journal_open_files_fd=yes], [have_sd_journal_open_files_fd=no])
+if test "${have_sd_journal_open_files_fd}" = "yes"; then
+    AC_DEFINE([HAVE_SD_JOURNAL_OPEN_FILES_FD], [1], [sd_journal_open_files_fd usability])
+fi
+
+AC_CHECK_LIB([systemd], [sd_journal_restart_fields], [have_sd_journal_restart_fields=yes], [have_sd_journal_restart_fields=no])
+if test "${have_sd_journal_restart_fields}" = "yes"; then
+    AC_DEFINE([HAVE_SD_JOURNAL_RESTART_FIELDS], [1], [sd_journal_restart_fields usability])
+fi
+
+AC_CHECK_LIB([systemd], [sd_journal_get_seqnum], [have_sd_journal_get_seqnum=yes], [have_sd_journal_get_seqnum=no])
+if test "${have_sd_journal_get_seqnum}" = "yes"; then
+    AC_DEFINE([HAVE_SD_JOURNAL_GET_SEQNUM], [1], [sd_journal_get_seqnum usability])
+fi
+
+AC_CHECK_LIB([systemd], [sd_bus_default_system, sd_bus_call_method, sd_bus_message_enter_container, sd_bus_message_read, sd_bus_message_exit_container],
+             [SYSTEMD_DBUS_FOUND=yes],
+             [SYSTEMD_DBUS_FOUND=no])
+
+if test "x$SYSTEMD_DBUS_FOUND" = "xyes"; then
+    AC_DEFINE([ENABLE_SYSTEMD_DBUS], [1], [libsystemd dbus usability])
+fi
+
 AC_MSG_NOTICE([OPTIONAL_SYSTEMD_LIBS is set to: ${OPTIONAL_SYSTEMD_LIBS}])
+
+if test "${enable_plugin_systemd_journal}" = "yes"; then
+    AC_MSG_CHECKING([for SD_JOURNAL_OS_ROOT in systemd])
+    AC_COMPILE_IFELSE(
+        [AC_LANG_PROGRAM(
+            [[#include <systemd/sd-journal.h>]],
+            [[int x = SD_JOURNAL_OS_ROOT;]]
+        )],
+        [AC_DEFINE(HAVE_SD_JOURNAL_OS_ROOT, 1, [Define if SD_JOURNAL_OS_ROOT is available])
+            AC_MSG_RESULT(yes)],
+            [AC_MSG_RESULT(no)]
+    )
+fi
 
 LIBS="${LIBS_BAK}"
 
@@ -1371,17 +1539,17 @@ AM_CONDITIONAL([ENABLE_PLUGIN_PERF], [test "${enable_plugin_perf}" = "yes"])
 # -----------------------------------------------------------------------------
 # gtest/gmock
 
-AC_MSG_CHECKING([if gtest and gmock can be found])
+if test "${enable_gtests}" = "yes"; then
+    AC_MSG_CHECKING([if gtest can be found])
 
-PKG_CHECK_MODULES([GTEST], [gtest], [have_gtest=yes], [have_gtest=no])
-PKG_CHECK_MODULES([GMOCK], [gmock], [have_gmock=yes], [have_gmock=no])
+    PKG_CHECK_MODULES([GTEST], [gtest], [have_gtest=yes], [have_gtest=no])
 
-if test "${have_gtest}" = "yes" -a "${have_gmock}" = "yes"; then
-    OPTIONAL_GTEST_CFLAGS="${GTEST_CFLAGS} ${GMOCK_CFLAGS}"
-    OPTIONAL_GTEST_LIBS="${GTEST_LIBS} ${GMOCK_LIBS}"
-    have_gtest="yes"
-else
-    have_gtest="no"
+    if test "${have_gtest}" = "yes"; then
+        OPTIONAL_GTEST_CFLAGS="${GTEST_CFLAGS}"
+        OPTIONAL_GTEST_LIBS="${GTEST_LIBS}"
+
+        AC_DEFINE([HAVE_GTEST], [1], [gtest availability])
+    fi
 fi
 
 # -----------------------------------------------------------------------------
@@ -1425,6 +1593,56 @@ if test "${build_ml}" = "yes"; then
     OPTIONAL_ML_LIBS=""
 fi
 
+
+# -----------------------------------------------------------------------------
+# logsmanagement
+
+LIBS_BAK="${LIBS}"
+
+# Check if submodules have not been fetched. Fail if Logs Management was explicitly requested.
+
+AC_MSG_CHECKING([if git submodules are present for logs management functionality])
+if test -f "fluent-bit/CMakeLists.txt"; then
+    AC_MSG_RESULT([yes])
+    have_logsmanagement_submodules="yes"
+else
+    AC_MSG_RESULT([no])
+    have_logsmanagement_submodules="no"
+fi
+
+if test "${enable_logsmanagement}" != "no" -a "${have_logsmanagement_submodules}" = "no"; then
+    AC_MSG_WARN([Logs management cannot be built because the required git submodules are missing.])
+fi
+
+if test "${enable_logsmanagement}" != "no" -a "x$CAN_USE_DLSYM" = xno; then
+    AC_MSG_WARN([Logs management cannot be built because dlsym cannot be used.])
+fi
+
+# Decide if we should build Logs Management
+if test "${enable_logsmanagement}" != "no" -a "${have_logsmanagement_submodules}" = "yes" -a "x$CAN_USE_DLSYM" = xyes; then
+    build_logsmanagement="yes"
+else
+    build_logsmanagement="no"
+fi
+
+AM_CONDITIONAL([ENABLE_LOGSMANAGEMENT], [test "${build_logsmanagement}" = "yes"])
+if test "${build_logsmanagement}" = "yes"; then
+    AC_DEFINE([ENABLE_LOGSMANAGEMENT], [1], [enable logs management functionality])
+fi
+
+# Decide if we should build Logs Management tests.
+if test "${build_logsmanagement}" = "yes" -a "${enable_logsmanagement_tests}" = "yes"; then
+    build_logsmanagement_tests="yes"
+else
+    build_logsmanagement_tests="no"
+fi
+
+AM_CONDITIONAL([ENABLE_LOGSMANAGEMENT_TESTS], [test "${build_logsmanagement_tests}" = "yes"])
+if test "${build_logsmanagement_tests}" = "yes"; then
+    AC_DEFINE([ENABLE_LOGSMANAGEMENT_TESTS], [1], [logs management tests])
+fi
+
+LIBS="${LIBS_BAK}"
 
 # -----------------------------------------------------------------------------
 # debugfs.plugin
@@ -1521,18 +1739,6 @@ PKG_CHECK_MODULES(
         [have_libssl=no]
     )],
     [have_libssl=no]
-)
-
-PKG_CHECK_MODULES(
-    [LIBCURL],
-    [libcurl],
-    [AC_CHECK_LIB(
-        [curl],
-        [curl_easy_init],
-        [have_libcurl=yes],
-        [have_libcurl=no]
-    )],
-    [have_libcurl=no]
 )
 
 PKG_CHECK_MODULES(
@@ -1803,27 +2009,6 @@ AC_LANG_POP([C++])
 
 # -----------------------------------------------------------------------------
 
-AC_MSG_CHECKING(whether we can use dlsym)
-OLD_LIBS="${LIBS}"
-LIBS="-ldl"
-AC_LINK_IFELSE([AC_LANG_SOURCE([[
-  #include <dlfcn.h>
-  static void *(*libc_malloc)(size_t);
-  int main() {
-    libc_malloc = dlsym(RTLD_NEXT, "malloc");
-  }
-]])], CAN_USE_DLSYM=yes, CAN_USE_DLSYM=no)
-LIBS="${OLD_LIBS}"
-AC_MSG_RESULT($CAN_USE_DLSYM)
-
-if test "x$CAN_USE_DLSYM" = xyes; then
-    AC_DEFINE([HAVE_DLSYM], [1], [dlsym usability])
-    OPTIONAL_DL_LIBS="-ldl"
-fi
-AC_SUBST([OPTIONAL_DL_LIBS])
-
-# -----------------------------------------------------------------------------
-
 
 AC_DEFINE_UNQUOTED([NETDATA_USER], ["${with_user}"], [use this user to drop privileged])
 
@@ -1877,6 +2062,12 @@ AC_SUBST([OPTIONAL_MATH_LIBS])
 AC_SUBST([OPTIONAL_DATACHANNEL_LIBS])
 AC_SUBST([OPTIONAL_UV_LIBS])
 AC_SUBST([OPTIONAL_LZ4_LIBS])
+AC_SUBST([OPTIONAL_BROTLIENC_LIBS])
+AC_SUBST([OPTIONAL_BROTLIDEC_LIBS])
+AC_SUBST([OPTIONAL_YAML_LIBS])
+AC_SUBST([OPTIONAL_CURL_LIBS])
+AC_SUBST([OPTIONAL_PCRE2_LIBS])
+AC_SUBST([OPTIONAL_ZSTD_LIBS])
 AC_SUBST([OPTIONAL_SSL_LIBS])
 AC_SUBST([OPTIONAL_JSONC_LIBS])
 AC_SUBST([OPTIONAL_YAML_LIBS])
@@ -1965,6 +2156,7 @@ AC_CONFIG_FILES([
     collectors/freebsd.plugin/Makefile
     collectors/freeipmi.plugin/Makefile
     collectors/cups.plugin/Makefile
+    collectors/log2journal/Makefile
     collectors/idlejitter.plugin/Makefile
     collectors/macos.plugin/Makefile
     collectors/nfacct.plugin/Makefile
@@ -2003,14 +2195,18 @@ AC_CONFIG_FILES([
     libnetdata/aral/Makefile
     libnetdata/avl/Makefile
     libnetdata/buffer/Makefile
+    libnetdata/buffered_reader/Makefile
     libnetdata/clocks/Makefile
     libnetdata/completion/Makefile
     libnetdata/config/Makefile
+    libnetdata/datetime/Makefile
     libnetdata/dictionary/Makefile
     libnetdata/ebpf/Makefile
     libnetdata/eval/Makefile
     libnetdata/facets/Makefile
+    libnetdata/functions_evloop/Makefile
     libnetdata/july/Makefile
+    libnetdata/line_splitter/Makefile
     libnetdata/locks/Makefile
     libnetdata/log/Makefile
     libnetdata/onewayalloc/Makefile
@@ -2024,6 +2220,7 @@ AC_CONFIG_FILES([
     libnetdata/storage_number/tests/Makefile
     libnetdata/threads/Makefile
     libnetdata/url/Makefile
+    libnetdata/uuid/Makefile
     libnetdata/json/Makefile
     libnetdata/health/Makefile
     libnetdata/worker_utilization/Makefile
@@ -2034,6 +2231,7 @@ AC_CONFIG_FILES([
     web/Makefile
     web/api/Makefile
     web/api/badges/Makefile
+    web/api/ilove/Makefile
     web/api/exporters/Makefile
     web/api/exporters/shell/Makefile
     web/api/exporters/prometheus/Makefile
@@ -2064,6 +2262,7 @@ AC_CONFIG_FILES([
     web/server/static/Makefile
     claim/Makefile
     spawn/Makefile
+    logsmanagement/Makefile
 ])
 
 AC_OUTPUT

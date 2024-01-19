@@ -22,9 +22,6 @@ struct rrdcalctemplate {
 
     STRING *context;
 
-    STRING *family_match;
-    SIMPLE_PATTERN *family_pattern;
-
     STRING *plugin_match;
     SIMPLE_PATTERN *plugin_pattern;
 
@@ -36,7 +33,8 @@ struct rrdcalctemplate {
 
     STRING *source;                 // the source of this alarm
     STRING *units;                  // the units of the alarm
-    STRING *info;                   // a short description of the alarm
+    STRING *summary;                // a short summary of the alarm
+    STRING *info;                   // a description of the alarm
 
     int update_every;               // update frequency for the alarm
 
@@ -100,11 +98,11 @@ struct rrdcalctemplate {
 #define rrdcalctemplate_classification(rt) string2str((rt)->classification)
 #define rrdcalctemplate_component(rt) string2str((rt)->component)
 #define rrdcalctemplate_type(rt) string2str((rt)->type)
-#define rrdcalctemplate_family_match(rt) string2str((rt)->family_match)
 #define rrdcalctemplate_plugin_match(rt) string2str((rt)->plugin_match)
 #define rrdcalctemplate_module_match(rt) string2str((rt)->module_match)
 #define rrdcalctemplate_charts_match(rt) string2str((rt)->charts_match)
 #define rrdcalctemplate_units(rt) string2str((rt)->units)
+#define rrdcalctemplate_summary(rt) string2str((rt)->summary)
 #define rrdcalctemplate_info(rt) string2str((rt)->info)
 #define rrdcalctemplate_source(rt) string2str((rt)->source)
 #define rrdcalctemplate_dimensions(rt) string2str((rt)->dimensions)

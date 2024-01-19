@@ -3,8 +3,8 @@
 
 # shellcheck source=packaging/makeself/functions.sh
 . "$(dirname "${0}")/../functions.sh" "${@}" || exit 1
-
-version="$(cat "$(dirname "${0}")/../curl.version")"
+# Source of truth for all the packages we bundle in static builds
+. "$(dirname "${0}")/../bundled-packages"
 
 # shellcheck disable=SC2015
 [ "${GITHUB_ACTIONS}" = "true" ] && echo "::group::Building cURL" || true
@@ -21,7 +21,7 @@ if [ -d "${cache}" ]; then
   CACHE_HIT=1
 else
   echo "No cached copy of build directory for curl found, fetching sources instead."
-  run git clone --branch "${version}" --single-branch --depth 1 'https://github.com/curl/curl.git' "${NETDATA_MAKESELF_PATH}/tmp/curl"
+  run git clone --branch "${CURL_VERSION}" --single-branch --depth 1 "${CURL_SOURCE}" "${NETDATA_MAKESELF_PATH}/tmp/curl"
   CACHE_HIT=0
 fi
 
@@ -36,7 +36,7 @@ if [ "${CACHE_HIT:-0}" -eq 0 ]; then
     run autoreconf -fi
 
     run ./configure \
-        --prefix="${NETDATA_INSTALL_PATH}" \
+        --prefix="/curl-local" \
         --enable-optimize \
         --disable-shared \
         --enable-static \
@@ -69,6 +69,7 @@ run make install
 
 store_cache curl "${NETDATA_MAKESELF_PATH}/tmp/curl"
 
+cp /curl-local/bin/curl "${NETDATA_INSTALL_PATH}"/bin/curl
 if [ "${NETDATA_BUILD_WITH_DEBUG}" -eq 0 ]; then
   run strip "${NETDATA_INSTALL_PATH}"/bin/curl
 fi

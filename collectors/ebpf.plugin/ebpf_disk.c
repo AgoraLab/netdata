@@ -485,6 +485,7 @@ static void ebpf_obsolete_disk_global(ebpf_module_t *em)
         if (flags & NETDATA_DISK_CHART_CREATED) {
             ebpf_write_chart_obsolete(ned->histogram.name,
                                       ned->family,
+                                      "",
                                       "Disk latency",
                                       EBPF_COMMON_DIMENSION_CALL,
                                       ned->family,
@@ -655,7 +656,7 @@ static void read_hard_disk_tables(int table, int maps_per_core)
  */
 static void ebpf_obsolete_hd_charts(netdata_ebpf_disks_t *w, int update_every)
 {
-    ebpf_write_chart_obsolete(w->histogram.name, w->family, w->histogram.title, EBPF_COMMON_DIMENSION_CALL,
+    ebpf_write_chart_obsolete(w->histogram.name, w->family, "", w->histogram.title, EBPF_COMMON_DIMENSION_CALL,
                               w->family, NETDATA_EBPF_CHART_TYPE_STACKED, "disk.latency_io",
                               w->histogram.order, update_every);
 
@@ -778,10 +779,10 @@ static void disk_collector(ebpf_module_t *em)
     int maps_per_core = em->maps_per_core;
     uint32_t running_time = 0;
     uint32_t lifetime = em->lifetime;
-    while (!ebpf_exit_plugin && running_time < lifetime) {
+    while (!ebpf_plugin_exit && running_time < lifetime) {
         (void)heartbeat_next(&hb, USEC_PER_SEC);
 
-        if (ebpf_exit_plugin || ++counter != update_every)
+        if (ebpf_plugin_exit || ++counter != update_every)
             continue;
 
         counter = 0;
@@ -873,7 +874,7 @@ static int ebpf_disk_load_bpf(ebpf_module_t *em)
 #endif
 
     if (ret)
-        netdata_log_error("%s %s", EBPF_DEFAULT_ERROR_MSG, em->thread_name);
+        netdata_log_error("%s %s", EBPF_DEFAULT_ERROR_MSG, em->info.thread_name);
 
     return ret;
 }

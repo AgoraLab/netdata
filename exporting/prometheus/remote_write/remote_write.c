@@ -188,8 +188,8 @@ int format_host_prometheus_remote_write(struct instance *instance, RRDHOST *host
 
     add_host_info(
         connector_specific_data->write_request,
-        "netdata_host_tags_info", hostname, host->program_name, host->program_version, now_realtime_usec() / USEC_PER_MS);
-    
+        "netdata_host_tags_info", hostname, rrdhost_program_name(host), rrdhost_program_version(host), now_realtime_usec() / USEC_PER_MS);
+
     if (unlikely(sending_labels_configured(instance))) {
         struct format_remote_write_label_callback tmp = {
             .write_request = connector_specific_data->write_request,
@@ -328,13 +328,12 @@ int format_dimension_prometheus_remote_write(struct instance *instance, RRDDIM *
 
                 add_metric(
                     connector_specific_data->write_request,
-                    name, chart, family, dimension, 
+                    name, chart, family, dimension,
                     (host == localhost) ? instance->config.hostname : rrdhost_hostname(host),
                     value, last_t * MSEC_PER_SEC);
             }
         }
 
-        
         struct format_remote_write_label_callback tmp = {
             .write_request = connector_specific_data->write_request,
             .instance = instance

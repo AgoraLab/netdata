@@ -20,6 +20,7 @@ extern int default_multidb_disk_quota_mb;
 extern struct rrdengine_instance *multidb_ctx[RRD_STORAGE_TIERS];
 extern size_t page_type_size[];
 extern size_t tier_page_size[];
+extern uint8_t tier_page_type[];
 
 #define CTX_POINT_SIZE_BYTES(ctx) page_type_size[(ctx)->config.page_type]
 
@@ -222,7 +223,7 @@ RRDENG_SIZE_STATS rrdeng_size_statistics(struct rrdengine_instance *ctx);
 size_t rrdeng_collectors_running(struct rrdengine_instance *ctx);
 bool rrdeng_is_legacy(STORAGE_INSTANCE *db_instance);
 
-size_t rrdeng_disk_space_max(STORAGE_INSTANCE *db_instance);
-size_t rrdeng_disk_space_used(STORAGE_INSTANCE *db_instance);
+uint64_t rrdeng_disk_space_max(STORAGE_INSTANCE *db_instance);
+uint64_t rrdeng_disk_space_used(STORAGE_INSTANCE *db_instance);
 
 #endif /* NETDATA_RRDENGINEAPI_H */

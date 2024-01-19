@@ -98,7 +98,7 @@ uint32_t rrdcalc_get_unique_id(RRDHOST *host, STRING *chart, STRING *name, uint3
 }
 
 // ----------------------------------------------------------------------------
-// RRDCALC replacing info text variables with RRDSET labels
+// RRDCALC replacing info/summary text variables with RRDSET labels
 
 static STRING *rrdcalc_replace_variables_with_rrdset_labels(const char *line, RRDCALC *rc) {
     if (!line || !*line)
@@ -135,6 +135,7 @@ static STRING *rrdcalc_replace_variables_with_rrdset_labels(const char *line, RR
             label_val[i - RRDCALC_VAR_LABEL_LEN - 1] = '\0';
 
             if(likely(rc->rrdset && rc->rrdset->rrdlabels)) {
+                lbl_value = NULL;
                 rrdlabels_get_value_strdup_or_null(rc->rrdset->rrdlabels, &lbl_value, label_val);
                 if (lbl_value) {
                     char *buf = find_and_replace(temp, var, lbl_value, m);
@@ -155,12 +156,20 @@ static STRING *rrdcalc_replace_variables_with_rrdset_labels(const char *line, RR
 void rrdcalc_update_info_using_rrdset_labels(RRDCALC *rc) {
     if(!rc->rrdset || !rc->original_info || !rc->rrdset->rrdlabels) return;
 
-    size_t labels_version = dictionary_version(rc->rrdset->rrdlabels);
+    size_t labels_version = rrdlabels_version(rc->rrdset->rrdlabels);
     if(rc->labels_version != labels_version) {
 
-        STRING *old = rc->info;
-        rc->info = rrdcalc_replace_variables_with_rrdset_labels(rrdcalc_original_info(rc), rc);
-        string_freez(old);
+        if (rc->original_info) {
+            STRING *old = rc->info;
+            rc->info = rrdcalc_replace_variables_with_rrdset_labels(rrdcalc_original_info(rc), rc);
+            string_freez(old);
+        }
+
+         if (rc->original_summary) {
+            STRING *old = rc->summary;
+            rc->summary = rrdcalc_replace_variables_with_rrdset_labels(rrdcalc_original_summary(rc), rc);
+            string_freez(old);
+        }
 
         rc->labels_version = labels_version;
     }
@@ -221,7 +230,7 @@ static void rrdcalc_link_to_rrdset(RRDSET *st, RRDCALC *rc) {
     rw_spinlock_write_unlock(&st->alerts.spinlock);
 
     if(rc->update_every < rc->rrdset->update_every) {
-        netdata_log_error("Health alarm '%s.%s' has update every %d, less than chart update every %d. Setting alarm update frequency to %d.", rrdset_id(rc->rrdset), rrdcalc_name(rc), rc->update_every, rc->rrdset->update_every, rc->rrdset->update_every);
+        netdata_log_info("Health alarm '%s.%s' has update every %d, less than chart update every %d. Setting alarm update frequency to %d.", rrdset_id(rc->rrdset), rrdcalc_name(rc), rc->update_every, rc->rrdset->update_every, rc->rrdset->update_every);
         rc->update_every = rc->rrdset->update_every;
     }
 
@@ -285,6 +294,11 @@ static void rrdcalc_link_to_rrdset(RRDSET *st, RRDCALC *rc) {
 
     rrdcalc_update_info_using_rrdset_labels(rc);
 
+    if(!rc->summary) {
+        rc->summary = string_dup(rc->name);
+        rc->original_summary = string_dup(rc->name);
+    }
+
     time_t now = now_realtime_sec();
 
     ALARM_ENTRY *ae = health_create_alarm_entry(
@@ -297,7 +311,6 @@ static void rrdcalc_link_to_rrdset(RRDSET *st, RRDCALC *rc) {
         rc->rrdset->id,
         rc->rrdset->context,
         rc->rrdset->name,
-        rc->rrdset->family,
         rc->classification,
         rc->component,
         rc->type,
@@ -310,6 +323,7 @@ static void rrdcalc_link_to_rrdset(RRDSET *st, RRDCALC *rc) {
         rc->status,
         rc->source,
         rc->units,
+        rc->summary,
         rc->info,
         0,
         rrdcalc_isrepeating(rc)?HEALTH_ENTRY_FLAG_IS_REPEATING:0);
@@ -343,7 +357,6 @@ static void rrdcalc_unlink_from_rrdset(RRDCALC *rc, bool having_ll_wrlock) {
             rc->rrdset->id,
             rc->rrdset->context,
             rc->rrdset->name,
-            rc->rrdset->family,
             rc->classification,
             rc->component,
             rc->type,
@@ -356,6 +369,7 @@ static void rrdcalc_unlink_from_rrdset(RRDCALC *rc, bool having_ll_wrlock) {
             RRDCALC_STATUS_REMOVED,
             rc->source,
             rc->units,
+            rc->summary,
             rc->info,
             0,
             0);
@@ -511,6 +525,11 @@ static void rrdcalc_rrdhost_insert_callback(const DICTIONARY_ITEM *item __maybe_
         rc->units = string_dup(rt->units);
         rc->info = string_dup(rt->info);
         rc->original_info = string_dup(rt->info);
+
+        if (!rt->summary)
+            rt->summary = string_dup(rc->name);
+        rc->summary = string_dup(rt->summary);
+        rc->original_summary = string_dup(rt->summary);
 
         rc->classification = string_dup(rt->classification);
         rc->component = string_dup(rt->component);
@@ -790,10 +809,10 @@ void rrdcalc_delete_alerts_not_matching_host_labels_from_this_host(RRDHOST *host
             continue;
 
         if(!rrdlabels_match_simple_pattern_parsed(host->rrdlabels, rc->host_labels_pattern, '=', NULL)) {
-            netdata_log_health("Health configuration for alarm '%s' cannot be applied, because the host %s does not have the label(s) '%s'",
-                 rrdcalc_name(rc),
-                 rrdhost_hostname(host),
-                 rrdcalc_host_labels(rc));
+            nd_log(NDLS_DAEMON, NDLP_DEBUG,
+                   "Health configuration for alarm '%s' cannot be applied, "
+                   "because the host %s does not have the label(s) '%s'",
+                   rrdcalc_name(rc), rrdhost_hostname(host), rrdcalc_host_labels(rc));
 
             rrdcalc_unlink_and_delete(host, rc, false);
         }

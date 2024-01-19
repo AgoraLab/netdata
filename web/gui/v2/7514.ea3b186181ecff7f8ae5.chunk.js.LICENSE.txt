@@ -1,0 +1,24 @@
+/*!
+ * @kurkle/color v0.3.2
+ * https://github.com/kurkle/color#readme
+ * (c) 2023 Jukka Kurkela
+ * Released under the MIT License
+ */
+
+/*!
+<<<<<<<< HEAD:web/gui/v2/7514.ea3b186181ecff7f8ae5.chunk.js.LICENSE.txt
+ * Chart.js v4.4.0
+========
+ * Chart.js v4.3.3
+>>>>>>>> agora-main:web/gui/v2/7514.685fae6aee82518a9737.chunk.js.LICENSE.txt
+ * https://www.chartjs.org
+ * (c) 2023 Chart.js Contributors
+ * Released under the MIT License
+ */
+
+/*!
+* chartjs-plugin-annotation v2.2.1
+* https://www.chartjs.org/chartjs-plugin-annotation/index
+ * (c) 2023 chartjs-plugin-annotation Contributors
+ * Released under the MIT License
+ */

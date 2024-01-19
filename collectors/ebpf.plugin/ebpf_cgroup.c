@@ -331,7 +331,7 @@ void ebpf_create_charts_on_systemd(char *id, char *title, char *units, char *fam
                                    char *algorithm, char *context, char *module, int update_every)
 {
     ebpf_cgroup_target_t *w;
-    ebpf_write_chart_cmd(NETDATA_SERVICE_FAMILY, id, title, units, family, charttype, context,
+    ebpf_write_chart_cmd(NETDATA_SERVICE_FAMILY, id, "", title, units, family, charttype, context,
                          order, update_every, module);
 
     for (w = ebpf_cgroup_pids; w; w = w->next) {
@@ -373,7 +373,7 @@ void *ebpf_cgroup_integration(void *ptr)
     heartbeat_t hb;
     heartbeat_init(&hb);
     //Plugin will be killed when it receives a signal
-    while (!ebpf_exit_plugin) {
+    while (!ebpf_plugin_exit) {
         (void)heartbeat_next(&hb, step);
 
         // We are using a small heartbeat time to wake up thread,

@@ -114,6 +114,7 @@ SUBDIRS += \
     web \
     claim \
     spawn \
+    logsmanagement \
     $(NULL)
 
 AM_CFLAGS = \
@@ -128,6 +129,8 @@ AM_CFLAGS = \
     $(OPTIONAL_CUPS_CFLAGS) \
     $(OPTIONAL_XENSTAT_CFLAGS) \
     $(OPTIONAL_BPF_CFLAGS) \
+    $(OPTIONAL_SYSTEMD_CFLAGS) \
+    $(OPTIONAL_GTEST_CFLAGS) \
     $(NULL)
 
 sbin_PROGRAMS =
@@ -144,18 +147,28 @@ LIBNETDATA_FILES = \
     libnetdata/avl/avl.h \
     libnetdata/buffer/buffer.c \
     libnetdata/buffer/buffer.h \
+    libnetdata/buffered_reader/buffered_reader.c \
+    libnetdata/buffered_reader/buffered_reader.h \
     libnetdata/circular_buffer/circular_buffer.c \
     libnetdata/circular_buffer/circular_buffer.h \
     libnetdata/clocks/clocks.c \
     libnetdata/clocks/clocks.h \
     libnetdata/completion/completion.c \
     libnetdata/completion/completion.h \
+    libnetdata/datetime/iso8601.c \
+    libnetdata/datetime/iso8601.h \
+    libnetdata/datetime/rfc3339.c \
+    libnetdata/datetime/rfc3339.h \
+    libnetdata/datetime/rfc7231.c \
+    libnetdata/datetime/rfc7231.h \
     libnetdata/dictionary/dictionary.c \
     libnetdata/dictionary/dictionary.h \
     libnetdata/eval/eval.c \
     libnetdata/eval/eval.h \
     libnetdata/facets/facets.c \
     libnetdata/facets/facets.h \
+    libnetdata/functions_evloop/functions_evloop.c \
+    libnetdata/functions_evloop/functions_evloop.h \
     libnetdata/gorilla/gorilla.h \
     libnetdata/gorilla/gorilla.cc \
     libnetdata/inlined.h \
@@ -164,8 +177,12 @@ LIBNETDATA_FILES = \
     libnetdata/libnetdata.c \
     libnetdata/libnetdata.h \
     libnetdata/required_dummies.h \
+    libnetdata/line_splitter/line_splitter.c \
+    libnetdata/line_splitter/line_splitter.h \
     libnetdata/locks/locks.c \
     libnetdata/locks/locks.h \
+    libnetdata/log/journal.c \
+    libnetdata/log/journal.h \
     libnetdata/log/log.c \
     libnetdata/log/log.h \
     libnetdata/onewayalloc/onewayalloc.c \
@@ -176,6 +193,7 @@ LIBNETDATA_FILES = \
     libnetdata/procfile/procfile.h \
     libnetdata/os.c \
     libnetdata/os.h \
+    libnetdata/endian.h \
     libnetdata/simple_pattern/simple_pattern.c \
     libnetdata/simple_pattern/simple_pattern.h \
     libnetdata/socket/socket.c \
@@ -192,6 +210,8 @@ LIBNETDATA_FILES = \
     libnetdata/threads/threads.h \
     libnetdata/url/url.c \
     libnetdata/url/url.h \
+    libnetdata/uuid/uuid.c \
+    libnetdata/uuid/uuid.h \
     libnetdata/json/json.c \
     libnetdata/json/json.h \
     libnetdata/json/jsmn.c \
@@ -201,9 +221,11 @@ LIBNETDATA_FILES = \
     libnetdata/string/utf8.h \
     libnetdata/worker_utilization/worker_utilization.c \
     libnetdata/worker_utilization/worker_utilization.h \
+    libnetdata/xxhash.h \
     libnetdata/http/http_defs.h \
     libnetdata/dyn_conf/dyn_conf.c \
     libnetdata/dyn_conf/dyn_conf.h \
+    libnetdata/simple_hashtable.h \
     $(NULL)
 
 if ENABLE_PLUGIN_EBPF
@@ -277,6 +299,10 @@ IDLEJITTER_PLUGIN_FILES = \
     $(NULL)
 
 CGROUPS_PLUGIN_FILES = \
+    collectors/cgroups.plugin/cgroup-internals.h \
+    collectors/cgroups.plugin/cgroup-discovery.c \
+    collectors/cgroups.plugin/cgroup-charts.c \
+    collectors/cgroups.plugin/cgroup-top.c \
     collectors/cgroups.plugin/sys_fs_cgroup.c \
     collectors/cgroups.plugin/sys_fs_cgroup.h \
     $(NULL)
@@ -305,8 +331,82 @@ FREEIPMI_PLUGIN_FILES = \
     $(NULL)
 
 SYSTEMD_JOURNAL_PLUGIN_FILES = \
+    collectors/systemd-journal.plugin/systemd-internals.h \
+    collectors/systemd-journal.plugin/systemd-main.c \
+    collectors/systemd-journal.plugin/systemd-units.c \
     collectors/systemd-journal.plugin/systemd-journal.c \
+    collectors/systemd-journal.plugin/systemd-journal-watcher.c \
+    collectors/systemd-journal.plugin/systemd-journal-annotations.c \
+    collectors/systemd-journal.plugin/systemd-journal-files.c \
+    collectors/systemd-journal.plugin/systemd-journal-fstat.c \
     $(LIBNETDATA_FILES) \
+    $(NULL)
+
+SYSTEMD_CAT_NATIVE_FILES = \
+    libnetdata/log/systemd-cat-native.c \
+    libnetdata/log/systemd-cat-native.h \
+    $(LIBNETDATA_FILES) \
+    $(NULL)
+
+LOG2JOURNAL_FILES = \
+    collectors/log2journal/log2journal.h \
+    collectors/log2journal/log2journal.c \
+    collectors/log2journal/log2journal-help.c \
+    collectors/log2journal/log2journal-yaml.c \
+    collectors/log2journal/log2journal-json.c \
+    collectors/log2journal/log2journal-logfmt.c \
+    collectors/log2journal/log2journal-pcre2.c \
+    collectors/log2journal/log2journal-params.c \
+    collectors/log2journal/log2journal-inject.c \
+    collectors/log2journal/log2journal-pattern.c \
+    collectors/log2journal/log2journal-replace.c \
+    collectors/log2journal/log2journal-rename.c \
+    collectors/log2journal/log2journal-rewrite.c \
+    $(NULL)
+
+
+LOGSMANAGEMENT_FILES = \
+    logsmanagement/circular_buffer.c \
+    logsmanagement/circular_buffer.h \
+    logsmanagement/db_api.c \
+    logsmanagement/db_api.h \
+    logsmanagement/defaults.h \
+    logsmanagement/file_info.h \
+    logsmanagement/flb_plugin.c \
+    logsmanagement/flb_plugin.h \
+    logsmanagement/functions.c \
+    logsmanagement/functions.h \
+    logsmanagement/helper.h \
+    logsmanagement/logsmanag_config.c \
+    logsmanagement/logsmanag_config.h \
+    logsmanagement/logsmanagement.c \
+    logsmanagement/parser.c \
+    logsmanagement/parser.h \
+    logsmanagement/query.c \
+    logsmanagement/query.h \
+    logsmanagement/rrd_api/rrd_api_docker_ev.c \
+    logsmanagement/rrd_api/rrd_api_docker_ev.h \
+    logsmanagement/rrd_api/rrd_api_generic.c \
+    logsmanagement/rrd_api/rrd_api_generic.h \
+    logsmanagement/rrd_api/rrd_api_kernel.c \
+    logsmanagement/rrd_api/rrd_api_kernel.h \
+    logsmanagement/rrd_api/rrd_api_mqtt.c \
+    logsmanagement/rrd_api/rrd_api_mqtt.h \
+    logsmanagement/rrd_api/rrd_api_stats.c \
+    logsmanagement/rrd_api/rrd_api_stats.h \
+    logsmanagement/rrd_api/rrd_api_systemd.c \
+    logsmanagement/rrd_api/rrd_api_systemd.h \
+    logsmanagement/rrd_api/rrd_api_web_log.c \
+    logsmanagement/rrd_api/rrd_api_web_log.h \
+    logsmanagement/rrd_api/rrd_api.h \
+    database/sqlite/sqlite3.c \
+    database/sqlite/sqlite3.h \
+    $(LIBNETDATA_FILES) \
+    $(NULL)
+
+LOGSMANAGEMENT_TESTS_FILES = \
+    logsmanagement/unit_test/unit_test.c \
+    logsmanagement/unit_test/unit_test.h \
     $(NULL)
 
 CUPS_PLUGIN_FILES = \
@@ -472,6 +572,7 @@ RRD_PLUGIN_FILES = \
     database/rrdfamily.c \
     database/rrdhost.c \
     database/rrdlabels.c \
+    database/rrdlabels.h \
     database/rrd.c \
     database/rrd.h \
     database/rrdset.c \
@@ -503,6 +604,9 @@ RRD_PLUGIN_FILES = \
     database/sqlite/sqlite_aclk_alert.h \
     database/sqlite/sqlite3.c \
     database/sqlite/sqlite3.h \
+    database/sqlite/sqlite3recover.c \
+    database/sqlite/sqlite3recover.h \
+    database/sqlite/dbdata.c \
     database/KolmogorovSmirnovDist.c \
     database/KolmogorovSmirnovDist.h \
     $(NULL)
@@ -572,10 +676,14 @@ if ENABLE_DBENGINE
         database/engine/cache.h \
         database/engine/metric.c \
         database/engine/metric.h \
+        database/engine/page.c \
+        database/engine/page.h \
+        database/engine/page_test.cc \
+        database/engine/page_test.h \
         database/engine/pdc.c \
         database/engine/pdc.h \
         $(NULL)
-    
+
     RRD_PLUGIN_KSY_BUILTFILES = \
         database/engine/journalfile_v2.ksy \
         database/engine/journalfile_v2_virtmemb.ksy \
@@ -598,6 +706,8 @@ API_PLUGIN_FILES = \
     web/api/exporters/allmetrics.h \
     web/api/exporters/shell/allmetrics_shell.c \
     web/api/exporters/shell/allmetrics_shell.h \
+    web/api/ilove/ilove.c \
+    web/api/ilove/ilove.h \
     web/api/queries/average/average.c \
     web/api/queries/average/average.h \
     web/api/queries/countif/countif.c \
@@ -657,11 +767,21 @@ API_PLUGIN_FILES = \
 STREAMING_PLUGIN_FILES = \
     streaming/rrdpush.c \
     streaming/compression.c \
+    streaming/compression.h \
+    streaming/compression_brotli.c \
+    streaming/compression_brotli.h \
+    streaming/compression_gzip.c \
+    streaming/compression_gzip.h \
+    streaming/compression_lz4.c \
+    streaming/compression_lz4.h \
+    streaming/compression_zstd.c \
+    streaming/compression_zstd.h \
     streaming/sender.c \
     streaming/receiver.c \
     streaming/replication.h \
     streaming/replication.c \
     streaming/rrdpush.h \
+    streaming/common.h \
     $(NULL)
 
 REGISTRY_PLUGIN_FILES = \
@@ -702,8 +822,6 @@ CLAIM_FILES = \
 
 if ENABLE_ACLK
 ACLK_FILES = \
-    aclk/aclk_util.c \
-    aclk/aclk_util.h \
     aclk/aclk_stats.c \
     aclk/aclk_stats.h \
     aclk/aclk_query.c \
@@ -716,8 +834,6 @@ ACLK_FILES = \
     aclk/aclk_tx_msgs.h \
     aclk/aclk_rx_msgs.c \
     aclk/aclk_rx_msgs.h \
-    aclk/https_client.c \
-    aclk/https_client.h \
     aclk/aclk_alarm_api.c \
     aclk/aclk_alarm_api.h \
     aclk/aclk_contexts_api.c \
@@ -765,15 +881,9 @@ libmqttwebsockets_a_SOURCES = \
     mqtt_websockets/src/common_public.c \
     mqtt_websockets/src/include/common_public.h \
     mqtt_websockets/src/include/common_internal.h \
-    mqtt_websockets/c-rbuf/src/ringbuffer.c \
-    mqtt_websockets/c-rbuf/include/ringbuffer.h \
-    mqtt_websockets/c-rbuf/src/ringbuffer_internal.h \
-    mqtt_websockets/c_rhash/src/c_rhash.c \
-    mqtt_websockets/c_rhash/include/c_rhash.h \
-    mqtt_websockets/c_rhash/src/c_rhash_internal.h \
     $(NULL)
 
-libmqttwebsockets_a_CFLAGS = $(CFLAGS) -DMQTT_WSS_CUSTOM_ALLOC -DRBUF_CUSTOM_MALLOC -DMQTT_WSS_CPUSTATS -I$(srcdir)/aclk/helpers -I$(srcdir)/mqtt_websockets/c_rhash/include
+libmqttwebsockets_a_CFLAGS = $(CFLAGS) -DMQTT_WSS_CUSTOM_ALLOC -DMQTT_WSS_CPUSTATS -I$(srcdir)/aclk/helpers -I$(srcdir)/mqtt_websockets/c_rhash/include
 
 if MQTT_WSS_DEBUG
 libmqttwebsockets_a_CFLAGS += -DMQTT_WSS_DEBUG
@@ -879,7 +989,24 @@ ACLK_ALWAYS_BUILD_FILES = \
     aclk/aclk.h \
     aclk/aclk_capas.c \
     aclk/aclk_capas.h \
+    aclk/aclk_util.c \
+    aclk/aclk_util.h \
+    aclk/https_client.c \
+    aclk/https_client.h \
     $(NULL)
+
+noinst_LIBRARIES += libcrutils.a
+
+libcrutils_a_SOURCES = \
+    mqtt_websockets/c-rbuf/src/ringbuffer.c \
+    mqtt_websockets/c-rbuf/include/ringbuffer.h \
+    mqtt_websockets/c-rbuf/src/ringbuffer_internal.h \
+    mqtt_websockets/c_rhash/src/c_rhash.c \
+    mqtt_websockets/c_rhash/include/c_rhash.h \
+    mqtt_websockets/c_rhash/src/c_rhash_internal.h \
+    $(NULL)
+
+libcrutils_a_CFLAGS = $(CFLAGS) -DRBUF_CUSTOM_MALLOC -I$(srcdir)/aclk/helpers -I$(abs_top_srcdir)/mqtt_websockets/c-rbuf/include -I$(srcdir)/mqtt_websockets/c_rhash/include
 
 SPAWN_PLUGIN_FILES = \
     spawn/spawn.c \
@@ -968,6 +1095,10 @@ H2O_FILES = \
     web/server/h2o/http_server.h \
     web/server/h2o/h2o_utils.c \
     web/server/h2o/h2o_utils.h \
+    web/server/h2o/streaming.c \
+    web/server/h2o/streaming.h \
+    web/server/h2o/connlist.c \
+    web/server/h2o/connlist.h \
     $(NULL)
 
 libh2o_a_SOURCES = \
@@ -1134,13 +1265,20 @@ NETDATA_COMMON_LIBS = \
     $(OPTIONAL_MQTT_LIBS) \
     $(OPTIONAL_UV_LIBS) \
     $(OPTIONAL_LZ4_LIBS) \
+    $(OPTIONAL_CURL_LIBS) \
+    $(OPTIONAL_ZSTD_LIBS) \
+    $(OPTIONAL_BROTLIENC_LIBS) \
+    $(OPTIONAL_BROTLIDEC_LIBS) \
     $(OPTIONAL_DATACHANNEL_LIBS) \
     libjudy.a \
+    libcrutils.a \
     $(OPTIONAL_SSL_LIBS) \
     $(OPTIONAL_JSONC_LIBS) \
     $(OPTIONAL_YAML_LIBS) \
     $(OPTIONAL_ATOMIC_LIBS) \
     $(OPTIONAL_DL_LIBS) \
+    $(OPTIONAL_SYSTEMD_LIBS) \
+    $(OPTIONAL_GTEST_LIBS) \
     $(NULL)
 
 if ENABLE_ACLK
@@ -1240,10 +1378,37 @@ if ENABLE_PLUGIN_FREEIPMI
         $(NULL)
 endif
 
+if ENABLE_LOG2JOURNAL
+    sbin_PROGRAMS += log2journal
+    log2journal_SOURCES = $(LOG2JOURNAL_FILES)
+    log2journal_LDADD = \
+            $(OPTIONAL_PCRE2_LIBS) \
+            $(OPTIONAL_YAML_LIBS) \
+            $(NULL)
+endif
+
 if ENABLE_PLUGIN_SYSTEMD_JOURNAL
     plugins_PROGRAMS += systemd-journal.plugin
     systemd_journal_plugin_SOURCES = $(SYSTEMD_JOURNAL_PLUGIN_FILES)
     systemd_journal_plugin_LDADD = \
+        $(NETDATA_COMMON_LIBS) \
+        $(OPTIONAL_SYSTEMD_LIBS) \
+        $(NULL)
+endif
+
+sbin_PROGRAMS += systemd-cat-native
+systemd_cat_native_SOURCES = $(SYSTEMD_CAT_NATIVE_FILES)
+systemd_cat_native_LDADD = \
+        $(NETDATA_COMMON_LIBS) \
+        $(NULL)
+
+if ENABLE_LOGSMANAGEMENT
+    plugins_PROGRAMS += logs-management.plugin
+    logs_management_plugin_SOURCES = $(LOGSMANAGEMENT_FILES)
+if ENABLE_LOGSMANAGEMENT_TESTS
+    logs_management_plugin_SOURCES += $(LOGSMANAGEMENT_TESTS_FILES)
+endif
+    logs_management_plugin_LDADD = \
         $(NETDATA_COMMON_LIBS) \
         $(OPTIONAL_SYSTEMD_LIBS) \
         $(NULL)

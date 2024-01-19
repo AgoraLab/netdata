@@ -203,6 +203,7 @@ if ! ./netdata-installer.sh --install-prefix "${NETDATA_INSTALL_PARENT}" \
     --disable-exporting-mongodb \
     --disable-exporting-pubsub \
     --disable-ml \
+    --disable-logsmanagement \
     --enable-plugin-freeipmi ; then
   printf >&2 "Build failed."
   exit 1

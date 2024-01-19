@@ -263,6 +263,11 @@ struct engine *read_exporting_config()
         else
             prometheus_exporter_instance->config.options &= ~EXPORTING_OPTION_SEND_AUTOMATIC_LABELS;
 
+        if (prometheus_config_get_boolean("send internal labels", CONFIG_BOOLEAN_NO))
+            prometheus_exporter_instance->config.options |= EXPORTING_OPTION_SEND_INTERNAL_LABELS;
+        else 
+            prometheus_exporter_instance->config.options &= ~EXPORTING_OPTION_SEND_INTERNAL_LABELS;
+
         prometheus_exporter_instance->config.charts_pattern = simple_pattern_create(
                 prometheus_config_get("send charts matching", "*"),
                 NULL,

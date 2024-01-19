@@ -1283,20 +1283,8 @@ void parse_command_line(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
-    stderror = stderr;
     clocks_init();
-
-    // ------------------------------------------------------------------------
-    // initialization of netdata plugin
-
-    program_name = "perf.plugin";
-
-    // disable syslog
-    error_log_syslog = 0;
-
-    // set errors flood protection to 100 logs per hour
-    error_log_errors_per_period = 100;
-    error_log_throttle_period = 3600;
+    nd_log_initialize_for_external_plugins("perf.plugin");
 
     parse_command_line(argc, argv);
 
@@ -1328,7 +1316,7 @@ int main(int argc, char **argv) {
         if(unlikely(netdata_exit)) break;
 
         if(unlikely(debug && iteration))
-            fprintf(stderr, "perf.plugin: iteration %zu, dt %llu usec\n"
+            fprintf(stderr, "perf.plugin: iteration %zu, dt %"PRIu64" usec\n"
                     , iteration
                     , dt
             );

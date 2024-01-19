@@ -44,11 +44,6 @@ include:
     support_type: Intermediate
     notes: ''
     eol_check: true
-  - <<: *alpine
-    version: "3.15"
-    support_type: Intermediate
-    notes: ''
-    eol_check: true
 
   - distro: archlinux
     version: latest
@@ -59,34 +54,6 @@ include:
       pacman --noconfirm -Syu && pacman --noconfirm -Sy grep libffi
     test:
       ebpf-core: true
-
-  - &alma
-    distro: almalinux
-    version: "9"
-    support_type: Core
-    notes: ''
-    jsonc_removal: |
-      dnf remove -y json-c-devel
-    eol_check: true
-    packages: &alma_packages
-      type: rpm
-      repo_distro: el/9
-      alt_links:
-        - el/9Server
-        - el/9Client
-      arches:
-        - x86_64
-        - aarch64
-    test:
-      ebpf-core: true
-  - <<: *alma
-    version: "8"
-    packages:
-      <<: *alma_packages
-      repo_distro: el/8
-      alt_links:
-        - el/8Server
-        - el/8Client
 
   - &amzn
     distro: amazonlinux
@@ -108,7 +75,6 @@ include:
       <<: *amzn_packages
       repo_distro: amazonlinux/2023
 
-
   - distro: centos
     version: "7"
     support_type: Core
@@ -124,6 +90,30 @@ include:
         - x86_64
     test:
       ebpf-core: false
+
+  - &centos_stream
+    distro: centos-stream
+    base_image: 'quay.io/centos/centos:stream9'
+    version: '9'
+    support_type: 'Community'
+    notes: ''
+    jsonc_removal: |
+      dnf remove -y json-c-devel
+    eol_check: true
+    packages: &cs_packages
+      type: rpm
+      repo_distro: el/c9s
+      arches:
+        - x86_64
+        - aarch64
+    test:
+      ebpf-core: true
+  - <<: *centos_stream
+    version: '8'
+    base_image: 'quay.io/centos/centos:stream8'
+    packages:
+      <<: *cs_packages
+      repo_distro: el/c8s
 
   - &debian
     distro: debian
@@ -165,7 +155,7 @@ include:
 
   - &fedora
     distro: fedora
-    version: "38"
+    version: "39"
     support_type: Core
     notes: ''
     eol_check: true
@@ -173,10 +163,17 @@ include:
       dnf remove -y json-c-devel
     packages: &fedora_packages
       type: rpm
-      repo_distro: fedora/38
+      repo_distro: fedora/39
       arches:
         - x86_64
         - aarch64
+    test:
+      ebpf-core: true
+  - <<: *fedora
+    version: "38"
+    packages:
+      <<: *fedora_packages
+      repo_distro: fedora/38
     test:
       ebpf-core: true
   - <<: *fedora
@@ -198,7 +195,7 @@ include:
       zypper rm -y libjson-c-devel
     packages: &opensuse_packages
       type: rpm
-      repo_distro: opensuse/leap:15.5
+      repo_distro: opensuse/15.5
       arches:
         - x86_64
         - aarch64
@@ -235,6 +232,36 @@ include:
       <<: *oracle_packages
       repo_distro: ol/9
 
+  - &rocky
+    distro: rockylinux
+    version: "9"
+    support_type: Core
+    notes: ''
+    jsonc_removal: |
+      dnf remove -y json-c-devel
+    eol_check: true
+    packages: &rocky_packages
+      type: rpm
+      repo_distro: el/9
+      alt_links:
+        - el/9Server
+        - el/9Client
+        - el/9RedHatVirtualizationHost
+      arches:
+        - x86_64
+        - aarch64
+    test:
+      ebpf-core: true
+  - <<: *rocky
+    version: "8"
+    packages:
+      <<: *rocky_packages
+      repo_distro: el/8
+      alt_links:
+        - el/8Server
+        - el/8Client
+        - el/8RedHatVirtualizationHost
+
   - &ubuntu
     distro: ubuntu
     version: "22.04"
@@ -254,6 +281,11 @@ include:
         - arm64
     test:
       ebpf-core: true
+  - <<: *ubuntu
+    version: "23.10"
+    packages:
+      <<: *ubuntu_packages
+      repo_distro: ubuntu/mantic
   - <<: *ubuntu
     version: "23.04"
     packages:

@@ -336,12 +336,11 @@ void usage(void) {
 }
 
 int main(int argc, char **argv) {
-    stderror = stderr;
     clocks_init();
+    nd_log_initialize_for_external_plugins("slabinfo.plugin");
 
     program_name = argv[0];
     program_version = "0.1";
-    error_log_syslog = 0;
 
     int update_every = 1, i, n, freq = 0;
 

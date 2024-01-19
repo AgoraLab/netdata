@@ -16,10 +16,10 @@ struct timespec {
 typedef int clockid_t;
 #endif
 
-typedef unsigned long long nsec_t;
-typedef unsigned long long msec_t;
-typedef unsigned long long usec_t;
-typedef long long susec_t;
+typedef uint64_t nsec_t;
+typedef uint64_t msec_t;
+typedef uint64_t usec_t;
+typedef int64_t  susec_t;
 
 typedef struct heartbeat {
     usec_t realtime;
@@ -117,6 +117,7 @@ usec_t now_realtime_usec(void);
 
 int now_monotonic_timeval(struct timeval *tv);
 time_t now_monotonic_sec(void);
+msec_t now_realtime_msec(void);
 usec_t now_monotonic_usec(void);
 int now_monotonic_high_precision_timeval(struct timeval *tv);
 time_t now_monotonic_high_precision_sec(void);

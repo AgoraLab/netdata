@@ -24,7 +24,7 @@ static SOCKET_PEERS netdata_ssl_peers(NETDATA_SSL *ssl) {
 }
 
 static void netdata_ssl_log_error_queue(const char *call, NETDATA_SSL *ssl, unsigned long err) {
-    error_limit_static_thread_var(erl, 1, 0);
+    nd_log_limit_static_thread_var(erl, 1, 0);
 
     if(err == SSL_ERROR_NONE)
         err = ERR_get_error();
@@ -103,13 +103,14 @@ static void netdata_ssl_log_error_queue(const char *call, NETDATA_SSL *ssl, unsi
         ERR_error_string_n(err, str, 1024);
         str[1024] = '\0';
         SOCKET_PEERS peers = netdata_ssl_peers(ssl);
-        error_limit(&erl, "SSL: %s() on socket local [[%s]:%d] <-> remote [[%s]:%d], returned error %lu (%s): %s",
-                    call, peers.local.ip, peers.local.port, peers.peer.ip, peers.peer.port, err, code, str);
+        nd_log_limit(&erl, NDLS_DAEMON, NDLP_ERR,
+                     "SSL: %s() on socket local [[%s]:%d] <-> remote [[%s]:%d], returned error %lu (%s): %s",
+                     call, peers.local.ip, peers.local.port, peers.peer.ip, peers.peer.port, err, code, str);
 
     } while((err = ERR_get_error()));
 }
 
-bool netdata_ssl_open(NETDATA_SSL *ssl, SSL_CTX *ctx, int fd) {
+bool netdata_ssl_open_ext(NETDATA_SSL *ssl, SSL_CTX *ctx, int fd, const unsigned char *alpn_protos, unsigned int alpn_protos_len) {
     errno = 0;
     ssl->ssl_errno = 0;
 
@@ -138,6 +139,8 @@ bool netdata_ssl_open(NETDATA_SSL *ssl, SSL_CTX *ctx, int fd) {
             ssl->state = NETDATA_SSL_STATE_FAILED;
             return false;
         }
+        if (alpn_protos && alpn_protos_len > 0)
+            SSL_set_alpn_protos(ssl->conn, alpn_protos, alpn_protos_len);
     }
 
     if(SSL_set_fd(ssl->conn, fd) != 1) {
@@ -151,6 +154,10 @@ bool netdata_ssl_open(NETDATA_SSL *ssl, SSL_CTX *ctx, int fd) {
     ERR_clear_error();
 
     return true;
+}
+
+bool netdata_ssl_open(NETDATA_SSL *ssl, SSL_CTX *ctx, int fd) {
+    return netdata_ssl_open_ext(ssl, ctx, fd, NULL, 0);
 }
 
 void netdata_ssl_close(NETDATA_SSL *ssl) {
@@ -173,7 +180,7 @@ void netdata_ssl_close(NETDATA_SSL *ssl) {
 }
 
 static inline bool is_handshake_complete(NETDATA_SSL *ssl, const char *op) {
-    error_limit_static_thread_var(erl, 1, 0);
+    nd_log_limit_static_thread_var(erl, 1, 0);
 
     if(unlikely(!ssl->conn)) {
         internal_error(true, "SSL: trying to %s on a NULL connection", op);
@@ -183,22 +190,25 @@ static inline bool is_handshake_complete(NETDATA_SSL *ssl, const char *op) {
     switch(ssl->state) {
         case NETDATA_SSL_STATE_NOT_SSL: {
             SOCKET_PEERS peers = netdata_ssl_peers(ssl);
-            error_limit(&erl, "SSL: on socket local [[%s]:%d] <-> remote [[%s]:%d], attempt to %s on non-SSL connection",
-                        peers.local.ip, peers.local.port, peers.peer.ip, peers.peer.port, op);
+            nd_log_limit(&erl, NDLS_DAEMON, NDLP_WARNING,
+                         "SSL: on socket local [[%s]:%d] <-> remote [[%s]:%d], attempt to %s on non-SSL connection",
+                         peers.local.ip, peers.local.port, peers.peer.ip, peers.peer.port, op);
             return false;
         }
 
         case NETDATA_SSL_STATE_INIT: {
             SOCKET_PEERS peers = netdata_ssl_peers(ssl);
-            error_limit(&erl, "SSL: on socket local [[%s]:%d] <-> remote [[%s]:%d], attempt to %s on an incomplete connection",
-                        peers.local.ip, peers.local.port, peers.peer.ip, peers.peer.port, op);
+            nd_log_limit(&erl, NDLS_DAEMON, NDLP_WARNING,
+                         "SSL: on socket local [[%s]:%d] <-> remote [[%s]:%d], attempt to %s on an incomplete connection",
+                         peers.local.ip, peers.local.port, peers.peer.ip, peers.peer.port, op);
             return false;
         }
 
         case NETDATA_SSL_STATE_FAILED: {
             SOCKET_PEERS peers = netdata_ssl_peers(ssl);
-            error_limit(&erl, "SSL: on socket local [[%s]:%d] <-> remote [[%s]:%d], attempt to %s on a failed connection",
-                        peers.local.ip, peers.local.port, peers.peer.ip, peers.peer.port, op);
+            nd_log_limit(&erl, NDLS_DAEMON, NDLP_WARNING,
+                         "SSL: on socket local [[%s]:%d] <-> remote [[%s]:%d], attempt to %s on a failed connection",
+                         peers.local.ip, peers.local.port, peers.peer.ip, peers.peer.port, op);
             return false;
         }
 
@@ -290,7 +300,7 @@ ssize_t netdata_ssl_write(NETDATA_SSL *ssl, const void *buf, size_t num) {
 }
 
 static inline bool is_handshake_initialized(NETDATA_SSL *ssl, const char *op) {
-    error_limit_static_thread_var(erl, 1, 0);
+    nd_log_limit_static_thread_var(erl, 1, 0);
 
     if(unlikely(!ssl->conn)) {
         internal_error(true, "SSL: trying to %s on a NULL connection", op);
@@ -300,8 +310,9 @@ static inline bool is_handshake_initialized(NETDATA_SSL *ssl, const char *op) {
     switch(ssl->state) {
         case NETDATA_SSL_STATE_NOT_SSL: {
             SOCKET_PEERS peers = netdata_ssl_peers(ssl);
-            error_limit(&erl, "SSL: on socket local [[%s]:%d] <-> remote [[%s]:%d], attempt to %s on non-SSL connection",
-                        peers.local.ip, peers.local.port, peers.peer.ip, peers.peer.port, op);
+            nd_log_limit(&erl,  NDLS_DAEMON, NDLP_WARNING,
+                         "SSL: on socket local [[%s]:%d] <-> remote [[%s]:%d], attempt to %s on non-SSL connection",
+                         peers.local.ip, peers.local.port, peers.peer.ip, peers.peer.port, op);
             return false;
         }
 
@@ -311,15 +322,17 @@ static inline bool is_handshake_initialized(NETDATA_SSL *ssl, const char *op) {
 
         case NETDATA_SSL_STATE_FAILED: {
             SOCKET_PEERS peers = netdata_ssl_peers(ssl);
-            error_limit(&erl, "SSL: on socket local [[%s]:%d] <-> remote [[%s]:%d], attempt to %s on a failed connection",
-                        peers.local.ip, peers.local.port, peers.peer.ip, peers.peer.port, op);
+            nd_log_limit(&erl, NDLS_DAEMON, NDLP_WARNING,
+                         "SSL: on socket local [[%s]:%d] <-> remote [[%s]:%d], attempt to %s on a failed connection",
+                         peers.local.ip, peers.local.port, peers.peer.ip, peers.peer.port, op);
             return false;
         }
 
         case NETDATA_SSL_STATE_COMPLETE: {
             SOCKET_PEERS peers = netdata_ssl_peers(ssl);
-            error_limit(&erl, "SSL: on socket local [[%s]:%d] <-> remote [[%s]:%d], attempt to %s on an complete connection",
-                        peers.local.ip, peers.local.port, peers.peer.ip, peers.peer.port, op);
+            nd_log_limit(&erl, NDLS_DAEMON, NDLP_WARNING,
+                         "SSL: on socket local [[%s]:%d] <-> remote [[%s]:%d], attempt to %s on an complete connection",
+                         peers.local.ip, peers.local.port, peers.peer.ip, peers.peer.port, op);
             return false;
         }
     }

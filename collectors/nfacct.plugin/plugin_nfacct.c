@@ -18,6 +18,8 @@
 #define NETDATA_CHART_PRIO_NETFILTER_PACKETS          8906
 #define NETDATA_CHART_PRIO_NETFILTER_BYTES            8907
 
+#define NFACCT_RESTART_EVERY_SECONDS 86400 // restart the plugin every this many seconds
+
 static inline size_t mnl_buffer_size() {
     long s = MNL_SOCKET_BUFFER_SIZE;
     if(s <= 0) return 8192;
@@ -745,20 +747,8 @@ void nfacct_signals()
 }
 
 int main(int argc, char **argv) {
-    stderror = stderr;
     clocks_init();
-
-    // ------------------------------------------------------------------------
-    // initialization of netdata plugin
-
-    program_name = "nfacct.plugin";
-
-    // disable syslog
-    error_log_syslog = 0;
-
-    // set errors flood protection to 100 logs per hour
-    error_log_errors_per_period = 100;
-    error_log_throttle_period = 3600;
+    nd_log_initialize_for_external_plugins("nfacct.plugin");
 
     // ------------------------------------------------------------------------
     // parse command line parameters
@@ -852,7 +842,7 @@ int main(int argc, char **argv) {
         if(unlikely(netdata_exit)) break;
 
         if(debug && iteration)
-            fprintf(stderr, "nfacct.plugin: iteration %zu, dt %llu usec\n"
+            fprintf(stderr, "nfacct.plugin: iteration %zu, dt %"PRIu64" usec\n"
                     , iteration
                     , dt
             );
@@ -879,9 +869,11 @@ int main(int argc, char **argv) {
 
         fflush(stdout);
 
-        // restart check (14400 seconds)
-        if(now_monotonic_sec() - started_t > 14400) break;
+        if (now_monotonic_sec() - started_t > NFACCT_RESTART_EVERY_SECONDS) {
+            collector_info("NFACCT reached my lifetime expectancy. Exiting to restart.");
+            fprintf(stdout, "EXIT\n");
+            fflush(stdout);
+            exit(0);
+        }
     }
-
-    collector_info("NFACCT process exiting");
 }

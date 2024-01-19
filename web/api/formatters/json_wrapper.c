@@ -874,7 +874,8 @@ void rrdr_json_wrapper_begin(RRDR *r, BUFFER *wb) {
         sq[0] = '"';
     }
 
-    buffer_json_initialize(wb, kq, sq, 0, true, (options & RRDR_OPTION_MINIFY) ? BUFFER_JSON_OPTIONS_MINIFY : BUFFER_JSON_OPTIONS_DEFAULT);
+    buffer_json_initialize(
+        wb, kq, sq, 0, true, (options & RRDR_OPTION_MINIFY) ? BUFFER_JSON_OPTIONS_MINIFY : BUFFER_JSON_OPTIONS_DEFAULT);
 
     buffer_json_member_add_uint64(wb, "api", 1);
     buffer_json_member_add_string(wb, "id", qt->id);
@@ -1209,7 +1210,7 @@ static void query_target_detailed_objects_tree(BUFFER *wb, RRDR *r, RRDR_OPTIONS
                         buffer_json_member_add_object(wb, rrdinstance_acquired_id(ria));
                         buffer_json_member_add_string(wb, "nm", rrdinstance_acquired_name(ria));
                         buffer_json_member_add_time_t(wb, "ue", rrdinstance_acquired_update_every(ria));
-                        DICTIONARY *labels = rrdinstance_acquired_labels(ria);
+                        RRDLABELS *labels = rrdinstance_acquired_labels(ria);
                         if(labels) {
                             buffer_json_member_add_object(wb, "labels");
                             rrdlabels_to_buffer_json_members(labels, wb);
@@ -1289,7 +1290,8 @@ void rrdr_json_wrapper_begin2(RRDR *r, BUFFER *wb) {
         sq[0] = '\'';
     }
 
-    buffer_json_initialize(wb, kq, sq, 0, true, (options & RRDR_OPTION_MINIFY) ? BUFFER_JSON_OPTIONS_MINIFY : BUFFER_JSON_OPTIONS_DEFAULT);
+    buffer_json_initialize(
+        wb, kq, sq, 0, true, (options & RRDR_OPTION_MINIFY) ? BUFFER_JSON_OPTIONS_MINIFY : BUFFER_JSON_OPTIONS_DEFAULT);
     buffer_json_member_add_uint64(wb, "api", 2);
 
     if(options & RRDR_OPTION_DEBUG) {

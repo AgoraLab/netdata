@@ -40,7 +40,7 @@ const char *rrdinstance_acquired_name(RRDINSTANCE_ACQUIRED *ria);
 bool rrdinstance_acquired_has_name(RRDINSTANCE_ACQUIRED *ria);
 const char *rrdinstance_acquired_units(RRDINSTANCE_ACQUIRED *ria);
 STRING *rrdinstance_acquired_units_dup(RRDINSTANCE_ACQUIRED *ria);
-DICTIONARY *rrdinstance_acquired_labels(RRDINSTANCE_ACQUIRED *ria);
+RRDLABELS *rrdinstance_acquired_labels(RRDINSTANCE_ACQUIRED *ria);
 DICTIONARY *rrdinstance_acquired_functions(RRDINSTANCE_ACQUIRED *ria);
 RRDHOST *rrdinstance_acquired_rrdhost(RRDINSTANCE_ACQUIRED *ria);
 RRDSET *rrdinstance_acquired_rrdset(RRDINSTANCE_ACQUIRED *ria);
@@ -432,6 +432,7 @@ struct sql_alert_transition_data {
     const char *units;
     const char *exec;
     const char *info;
+    const char *summary;
     const char *classification;
     const char *type;
     const char *component;
@@ -472,6 +473,7 @@ struct sql_alert_config_data {
     const char *classification;
     const char *component;
     const char *type;
+    const char *summary;
 
     struct {
         struct {
@@ -531,6 +533,7 @@ struct sql_alert_instance_v2_entry {
     RRDCALC_STATUS status;
     RRDCALC_FLAGS flags;
     STRING *info;
+    STRING *summary;
     NETDATA_DOUBLE value;
     time_t last_updated;
     time_t last_status_change;

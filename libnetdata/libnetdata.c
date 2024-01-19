@@ -42,7 +42,7 @@ void aral_judy_init(void) {
     for(size_t Words = 0; Words <= MAX_JUDY_SIZE_TO_ARAL; Words++)
         if(judy_sizes_config[Words]) {
             char buf[30+1];
-            snprintfz(buf, 30, "judy-%zu", Words * sizeof(Word_t));
+            snprintfz(buf, sizeof(buf) - 1, "judy-%zu", Words * sizeof(Word_t));
             judy_sizes_aral[Words] = aral_create(
                     buf,
                     Words * sizeof(Word_t),
@@ -1269,17 +1269,19 @@ char *fgets_trim_len(char *buf, size_t buf_size, FILE *fp, size_t *len) {
     return s;
 }
 
+// vsnprintfz() returns the number of bytes actually written - after possible truncation
 int vsnprintfz(char *dst, size_t n, const char *fmt, va_list args) {
     if(unlikely(!n)) return 0;
 
     int size = vsnprintf(dst, n, fmt, args);
     dst[n - 1] = '\0';
 
-    if (unlikely((size_t) size > n)) size = (int)n;
+    if (unlikely((size_t) size >= n)) size = (int)(n - 1);
 
     return size;
 }
 
+// snprintfz() returns the number of bytes actually written - after possible truncation
 int snprintfz(char *dst, size_t n, const char *fmt, ...) {
     va_list args;
 
@@ -1694,51 +1696,28 @@ char *find_and_replace(const char *src, const char *find, const char *replace, c
     return value;
 }
 
-inline int pluginsd_isspace(char c) {
-    switch(c) {
-        case ' ':
-        case '\t':
-        case '\r':
-        case '\n':
-        case '=':
-            return 1;
 
-        default:
-            return 0;
+BUFFER *run_command_and_get_output_to_buffer(const char *command, int max_line_length) {
+    BUFFER *wb = buffer_create(0, NULL);
+
+    pid_t pid;
+    FILE *fp = netdata_popen(command, &pid, NULL);
+
+    if(fp) {
+        char buffer[max_line_length + 1];
+        while (fgets(buffer, max_line_length, fp)) {
+            buffer[max_line_length] = '\0';
+            buffer_strcat(wb, buffer);
+        }
     }
-}
-
-inline int config_isspace(char c) {
-    switch (c) {
-        case ' ':
-        case '\t':
-        case '\r':
-        case '\n':
-        case ',':
-            return 1;
-
-        default:
-            return 0;
+    else {
+        buffer_free(wb);
+        netdata_log_error("Failed to execute command '%s'.", command);
+        return NULL;
     }
-}
 
-inline int group_by_label_isspace(char c) {
-    if(c == ',' || c == '|')
-        return 1;
-
-    return 0;
-}
-
-bool isspace_map_pluginsd[256] = {};
-bool isspace_map_config[256] = {};
-bool isspace_map_group_by_label[256] = {};
-
-__attribute__((constructor)) void initialize_is_space_arrays(void) {
-    for(int c = 0; c < 256 ; c++) {
-        isspace_map_pluginsd[c] = pluginsd_isspace((char) c);
-        isspace_map_config[c] = config_isspace((char) c);
-        isspace_map_group_by_label[c] = group_by_label_isspace((char) c);
-    }
+    netdata_pclose(NULL, fp, pid);
+    return wb;
 }
 
 bool run_command_and_copy_output_to_stdout(const char *command, int max_line_length) {
@@ -1942,6 +1921,7 @@ void timing_action(TIMING_ACTION action, TIMING_STEP step) {
     }
 }
 
+#ifdef ENABLE_HTTPS
 int hash256_string(const unsigned char *string, size_t size, char *hash) {
     EVP_MD_CTX *ctx;
     ctx = EVP_MD_CTX_create();
@@ -1966,19 +1946,15 @@ int hash256_string(const unsigned char *string, size_t size, char *hash) {
     EVP_MD_CTX_destroy(ctx);
     return 1;
 }
+#endif
 
-// Returns 1 if an absolute period was requested or 0 if it was a relative period
-bool rrdr_relative_window_to_absolute(time_t *after, time_t *before, time_t *now_ptr, bool unittest_running) {
-    time_t now = now_realtime_sec() - 1;
 
-    if(now_ptr)
-        *now_ptr = now;
+bool rrdr_relative_window_to_absolute(time_t *after, time_t *before, time_t now) {
+    if(!now) now = now_realtime_sec();
 
     int absolute_period_requested = -1;
-    long long after_requested, before_requested;
-
-    before_requested = *before;
-    after_requested = *after;
+    time_t before_requested = *before;
+    time_t after_requested = *after;
 
     // allow relative for before (smaller than API_RELATIVE_TIME_MAX)
     if(ABS(before_requested) <= API_RELATIVE_TIME_MAX) {
@@ -2023,10 +1999,28 @@ bool rrdr_relative_window_to_absolute(time_t *after, time_t *before, time_t *now
     // shift the query back to be in the present time
     // (this may also happen because of the rules above)
     if(before_requested > now) {
-        long long delta = before_requested - now;
+        time_t delta = before_requested - now;
         before_requested -= delta;
         after_requested  -= delta;
     }
+
+    *before = before_requested;
+    *after = after_requested;
+
+    return (absolute_period_requested != 1);
+}
+
+// Returns 1 if an absolute period was requested or 0 if it was a relative period
+bool rrdr_relative_window_to_absolute_query(time_t *after, time_t *before, time_t *now_ptr, bool unittest_running) {
+    time_t now = now_realtime_sec() - 1;
+
+    if(now_ptr)
+        *now_ptr = now;
+
+    time_t before_requested = *before;
+    time_t after_requested = *after;
+
+    int absolute_period_requested = rrdr_relative_window_to_absolute(&after_requested, &before_requested, now);
 
     time_t absolute_minimum_time = now - (10 * 365 * 86400);
     time_t absolute_maximum_time = now + (1 * 365 * 86400);

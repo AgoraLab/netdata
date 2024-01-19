@@ -49,7 +49,6 @@ static inline void health_rrdcalc2json_nolock(RRDHOST *host, BUFFER *wb, RRDCALC
                     "\t\t\t\"config_hash_id\": \"%s\",\n"
                     "\t\t\t\"name\": \"%s\",\n"
                     "\t\t\t\"chart\": \"%s\",\n"
-                    "\t\t\t\"family\": \"%s\",\n"
                     "\t\t\t\"class\": \"%s\",\n"
                     "\t\t\t\"component\": \"%s\",\n"
                     "\t\t\t\"type\": \"%s\",\n"
@@ -60,6 +59,7 @@ static inline void health_rrdcalc2json_nolock(RRDHOST *host, BUFFER *wb, RRDCALC
                     "\t\t\t\"recipient\": \"%s\",\n"
                     "\t\t\t\"source\": \"%s\",\n"
                     "\t\t\t\"units\": \"%s\",\n"
+                    "\t\t\t\"summary\": \"%s\",\n"
                     "\t\t\t\"info\": \"%s\",\n"
                     "\t\t\t\"status\": \"%s\",\n"
                     "\t\t\t\"last_status_change\": %lu,\n"
@@ -82,7 +82,6 @@ static inline void health_rrdcalc2json_nolock(RRDHOST *host, BUFFER *wb, RRDCALC
                    , hash_id
                    , rrdcalc_name(rc)
                    , rrdcalc_chart_name(rc)
-                   , (rc->rrdset)?rrdset_family(rc->rrdset):""
                    , rc->classification?rrdcalc_classification(rc):"Unknown"
                    , rc->component?rrdcalc_component(rc):"Unknown"
                    , rc->type?rrdcalc_type(rc):"Unknown"
@@ -93,6 +92,7 @@ static inline void health_rrdcalc2json_nolock(RRDHOST *host, BUFFER *wb, RRDCALC
                    , rc->recipient?rrdcalc_recipient(rc):string2str(host->health.health_default_recipient)
                    , rrdcalc_source(rc)
                    , rrdcalc_units(rc)
+                   , rrdcalc_summary(rc)
                    , rrdcalc_info(rc)
                    , rrdcalc_status2string(rc->status)
                    , (unsigned long)rc->last_status_change

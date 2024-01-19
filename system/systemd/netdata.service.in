@@ -3,9 +3,10 @@
 Description=Real time performance monitoring
 
 # append here other services you want netdata to wait for them to start
-After=network.target httpd.service squid.service nfs-server.service mysqld.service mysql.service named.service postfix.service chronyd.service
+After=network.target
 
 [Service]
+LogNamespace=netdata
 Type=simple
 User=root
 RuntimeDirectory=netdata
@@ -72,6 +73,8 @@ CapabilityBoundingSet=CAP_SETGID CAP_SETUID
 CapabilityBoundingSet=CAP_CHOWN
 # is required for smartctl, storcli64, lsscsi
 CapabilityBoundingSet=CAP_AUDIT_CONTROL CAP_AUDIT_READ CAP_AUDIT_WRITE CAP_SYS_RAWIO
+# is required for logs-management.plugin
+CapabilityBoundingSet=CAP_SYSLOG
 
 # Sandboxing
 ProtectSystem=full

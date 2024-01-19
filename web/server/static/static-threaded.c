@@ -242,7 +242,9 @@ static void *web_server_add_callback(POLLINFO *pi, short int *events, void *data
 
     netdata_log_debug(D_WEB_CLIENT, "%llu: ADDED CLIENT FD %d", w->id, pi->fd);
 
+#ifdef ENABLE_HTTPS
 cleanup:
+#endif
     worker_is_idle();
     return w;
 }
@@ -292,7 +294,7 @@ static int web_server_rcv_callback(POLLINFO *pi, short int *events) {
         netdata_log_debug(D_WEB_CLIENT, "%llu: processing received data on fd %d.", w->id, fd);
         worker_is_idle();
         worker_is_busy(WORKER_JOB_PROCESS);
-        web_client_process_request(w);
+        web_client_process_request_from_web_server(w);
 
         if (unlikely(w->mode == WEB_CLIENT_MODE_STREAM)) {
             web_client_send(w);
@@ -368,7 +370,7 @@ static int web_server_snd_callback(POLLINFO *pi, short int *events) {
 
     netdata_log_debug(D_WEB_CLIENT, "%llu: sending data on fd %d.", w->id, fd);
 
-    int ret = web_client_send(w);
+    ssize_t ret = web_client_send(w);
 
     if(unlikely(ret < 0)) {
         retval = -1;
@@ -499,12 +501,12 @@ void *socket_listen_main_static_threaded(void *ptr) {
     if(!api_sockets.opened)
         fatal("LISTENER: no listen sockets available.");
 
+#ifdef ENABLE_HTTPS
     netdata_ssl_validate_certificate = !config_get_boolean(CONFIG_SECTION_WEB, "ssl skip certificate verification", !netdata_ssl_validate_certificate);
 
     if(!netdata_ssl_validate_certificate_sender)
         netdata_log_info("SSL: web server will skip SSL certificates verification.");
 
-#ifdef ENABLE_HTTPS
     netdata_ssl_initialize_ctx(NETDATA_SSL_WEB_SERVER_CTX);
 #endif
 
@@ -536,15 +538,13 @@ void *socket_listen_main_static_threaded(void *ptr) {
     static_workers_private_data = callocz((size_t)static_threaded_workers_count,
                                           sizeof(struct web_server_static_threaded_worker));
 
-    web_server_is_multithreaded = (static_threaded_workers_count > 1);
-
     int i;
     for (i = 1; i < static_threaded_workers_count; i++) {
         static_workers_private_data[i].id = i;
         static_workers_private_data[i].max_sockets = max_sockets / static_threaded_workers_count;
 
         char tag[50 + 1];
-        snprintfz(tag, 50, "WEB[%d]", i+1);
+        snprintfz(tag, sizeof(tag) - 1, "WEB[%d]", i+1);
 
         netdata_log_info("starting worker %d", i+1);
         netdata_thread_create(&static_workers_private_data[i].thread, tag, NETDATA_THREAD_OPTION_DEFAULT,

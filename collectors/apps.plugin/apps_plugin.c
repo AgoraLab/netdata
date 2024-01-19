@@ -265,9 +265,11 @@ struct target {
     uint32_t idhash;
 
     char name[MAX_NAME + 1];
-
+    char clean_name[MAX_NAME + 1]; // sanitized name used in chart id (need to replace at least dots)
     uid_t uid;
     gid_t gid;
+
+    bool is_other;
 
     kernel_uint_t minflt;
     kernel_uint_t cminflt;
@@ -782,7 +784,8 @@ static struct target *get_users_target(uid_t uid) {
             snprintfz(w->name, MAX_NAME, "%s", pw->pw_name);
     }
 
-    netdata_fix_chart_name(w->name);
+    strncpyz(w->clean_name, w->name, MAX_NAME);
+    netdata_fix_chart_name(w->clean_name);
 
     w->uid = uid;
 
@@ -830,7 +833,8 @@ struct target *get_groups_target(gid_t gid)
             snprintfz(w->name, MAX_NAME, "%s", gr->gr_name);
     }
 
-    netdata_fix_chart_name(w->name);
+    strncpyz(w->clean_name, w->name, MAX_NAME);
+    netdata_fix_chart_name(w->clean_name);
 
     w->gid = gid;
 
@@ -899,6 +903,14 @@ static struct target *get_apps_groups_target(const char *id, struct target *targ
     else
         // copy the id
         strncpyz(w->name, nid, MAX_NAME);
+    
+    // dots are used to distinguish chart type and id in streaming, so we should replace them
+    strncpyz(w->clean_name, w->name, MAX_NAME);
+    netdata_fix_chart_name(w->clean_name);
+    for (char *d = w->clean_name; *d; d++) {
+        if (*d == '.')
+            *d = '_';
+    }
 
     strncpyz(w->compare, nid, MAX_COMPARE_NAME);
     size_t len = strlen(w->compare);
@@ -997,6 +1009,7 @@ static int read_apps_groups_conf(const char *path, const char *file)
     apps_groups_default_target = get_apps_groups_target("p+!o@w#e$i^r&7*5(-i)l-o_", NULL, "other"); // match nothing
     if(!apps_groups_default_target)
         fatal("Cannot create default target");
+    apps_groups_default_target->is_other = true;
 
     // allow the user to override group 'other'
     if(apps_groups_default_target->target)
@@ -1457,17 +1470,17 @@ cleanup:
             netdata_log_info(
                     "FDS_LIMITS: PID %d (%s) is using "
                     "%0.2f %% of its fds limits, "
-                    "open fds = %llu ("
-                    "files = %llu, "
-                    "pipes = %llu, "
-                    "sockets = %llu, "
-                    "inotifies = %llu, "
-                    "eventfds = %llu, "
-                    "timerfds = %llu, "
-                    "signalfds = %llu, "
-                    "eventpolls = %llu "
-                    "other = %llu "
-                    "), open fds limit = %llu, "
+                    "open fds = %"PRIu64 "("
+                    "files = %"PRIu64 ", "
+                    "pipes = %"PRIu64 ", "
+                    "sockets = %"PRIu64", "
+                    "inotifies = %"PRIu64", "
+                    "eventfds = %"PRIu64", "
+                    "timerfds = %"PRIu64", "
+                    "signalfds = %"PRIu64", "
+                    "eventpolls = %"PRIu64" "
+                    "other = %"PRIu64" "
+                    "), open fds limit = %"PRIu64", "
                     "%s, "
                     "original line [%s]",
                     p->pid, p->comm, p->openfds_limits_percent, all_fds,
@@ -2460,7 +2473,7 @@ static inline int debug_print_process_and_parents(struct pid_stat *p, usec_t tim
     for(i = 0; i < indent ;i++) buffer[i] = ' ';
     buffer[i] = '\0';
 
-    fprintf(stderr, "  %s %s%s (%d %s %llu"
+    fprintf(stderr, "  %s %s%s (%d %s %"PRIu64""
         , buffer
         , prefix
         , p->comm
@@ -3431,8 +3444,8 @@ static void calculate_netdata_statistics(void) {
 // ----------------------------------------------------------------------------
 // update chart dimensions
 
-static inline void send_BEGIN(const char *type, const char *id, usec_t usec) {
-    fprintf(stdout, "BEGIN %s.%s %llu\n", type, id, usec);
+static inline void send_BEGIN(const char *type, const char *name,const char *metric,  usec_t usec) {
+    fprintf(stdout, "BEGIN %s.%s_%s %" PRIu64 "\n", type, name, metric, usec);
 }
 
 static inline void send_SET(const char *name, kernel_uint_t value) {
@@ -3440,7 +3453,7 @@ static inline void send_SET(const char *name, kernel_uint_t value) {
 }
 
 static inline void send_END(void) {
-    fprintf(stdout, "END\n");
+    fprintf(stdout, "END\n\n");
 }
 
 void send_resource_usage_to_netdata(usec_t dt) {
@@ -3518,11 +3531,11 @@ void send_resource_usage_to_netdata(usec_t dt) {
     }
 
     fprintf(stdout,
-        "BEGIN netdata.apps_cpu %llu\n"
-        "SET user = %llu\n"
-        "SET system = %llu\n"
+        "BEGIN netdata.apps_cpu %"PRIu64"\n"
+        "SET user = %"PRIu64"\n"
+        "SET system = %"PRIu64"\n"
         "END\n"
-        "BEGIN netdata.apps_sizes %llu\n"
+        "BEGIN netdata.apps_sizes %"PRIu64"\n"
         "SET calls = %zu\n"
         "SET files = %zu\n"
         "SET filenames = %zu\n"
@@ -3549,7 +3562,7 @@ void send_resource_usage_to_netdata(usec_t dt) {
         );
 
     fprintf(stdout,
-            "BEGIN netdata.apps_fix %llu\n"
+            "BEGIN netdata.apps_fix %"PRIu64"\n"
             "SET utime = %u\n"
             "SET stime = %u\n"
             "SET gtime = %u\n"
@@ -3566,7 +3579,7 @@ void send_resource_usage_to_netdata(usec_t dt) {
 
     if(include_exited_childs)
         fprintf(stdout,
-            "BEGIN netdata.apps_children_fix %llu\n"
+            "BEGIN netdata.apps_children_fix %"PRIu64"\n"
             "SET cutime = %u\n"
             "SET cstime = %u\n"
             "SET cgtime = %u\n"
@@ -3736,249 +3749,118 @@ static void normalize_utilization(struct target *root) {
 static void send_collected_data_to_netdata(struct target *root, const char *type, usec_t dt) {
     struct target *w;
 
-    send_BEGIN(type, "cpu", dt);
     for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed && w->processes))
-            send_SET(w->name, (kernel_uint_t)(w->utime * utime_fix_ratio) + (kernel_uint_t)(w->stime * stime_fix_ratio) + (kernel_uint_t)(w->gtime * gtime_fix_ratio) + (include_exited_childs?((kernel_uint_t)(w->cutime * cutime_fix_ratio) + (kernel_uint_t)(w->cstime * cstime_fix_ratio) + (kernel_uint_t)(w->cgtime * cgtime_fix_ratio)):0ULL));
-    }
-    send_END();
+        if (unlikely(!w->exposed))
+            continue;
 
-    send_BEGIN(type, "cpu_user", dt);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed && w->processes))
-            send_SET(w->name, (kernel_uint_t)(w->utime * utime_fix_ratio) + (include_exited_childs?((kernel_uint_t)(w->cutime * cutime_fix_ratio)):0ULL));
-    }
-    send_END();
-
-    send_BEGIN(type, "cpu_system", dt);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed && w->processes))
-            send_SET(w->name, (kernel_uint_t)(w->stime * stime_fix_ratio) + (include_exited_childs?((kernel_uint_t)(w->cstime * cstime_fix_ratio)):0ULL));
-    }
-    send_END();
-
-    if(show_guest_time) {
-        send_BEGIN(type, "cpu_guest", dt);
-        for (w = root; w ; w = w->next) {
-            if(unlikely(w->exposed && w->processes))
-                send_SET(w->name, (kernel_uint_t)(w->gtime * gtime_fix_ratio) + (include_exited_childs?((kernel_uint_t)(w->cgtime * cgtime_fix_ratio)):0ULL));
-        }
+        send_BEGIN(type, w->clean_name, "processes", dt);
+        send_SET("processes", w->processes);
         send_END();
-    }
+
+        send_BEGIN(type, w->clean_name, "threads", dt);
+        send_SET("threads", w->num_threads);
+        send_END();
+
+        if (unlikely(!w->processes && !w->is_other))
+            continue;
+
+        send_BEGIN(type, w->clean_name, "cpu_utilization", dt);
+        send_SET("user", (kernel_uint_t)(w->utime * utime_fix_ratio) + (include_exited_childs ? ((kernel_uint_t)(w->cutime * cutime_fix_ratio)) : 0ULL));
+        send_SET("system", (kernel_uint_t)(w->stime * stime_fix_ratio) + (include_exited_childs ? ((kernel_uint_t)(w->cstime * cstime_fix_ratio)) : 0ULL));
+        send_END();
 
 #ifndef __FreeBSD__
-    send_BEGIN(type, "voluntary_ctxt_switches", dt);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed && w->processes))
-            send_SET(w->name, w->status_voluntary_ctxt_switches);
-    }
-    send_END();
+        if (enable_guest_charts) {
+            send_BEGIN(type, w->clean_name, "cpu_guest_utilization", dt);
+            send_SET("guest", (kernel_uint_t)(w->gtime * gtime_fix_ratio) + (include_exited_childs ? ((kernel_uint_t)(w->cgtime * cgtime_fix_ratio)) : 0ULL));
+            send_END();
+        }
 
-    send_BEGIN(type, "involuntary_ctxt_switches", dt);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed && w->processes))
-            send_SET(w->name, w->status_nonvoluntary_ctxt_switches);
-    }
-    send_END();
+        send_BEGIN(type, w->clean_name, "cpu_context_switches", dt);
+        send_SET("voluntary", w->status_voluntary_ctxt_switches);
+        send_SET("involuntary", w->status_nonvoluntary_ctxt_switches);
+        send_END();
+
+        send_BEGIN(type, w->clean_name, "mem_private_usage", dt);
+        send_SET("mem", (w->status_vmrss > w->status_vmshared)?(w->status_vmrss - w->status_vmshared) : 0ULL);
+        send_END();
 #endif
 
-    send_BEGIN(type, "threads", dt);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            send_SET(w->name, w->num_threads);
-    }
-    send_END();
+        send_BEGIN(type, w->clean_name, "mem_usage", dt);
+        send_SET("rss", w->status_vmrss);
+        send_END();
 
-    send_BEGIN(type, "processes", dt);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            send_SET(w->name, w->processes);
-    }
-    send_END();
+        send_BEGIN(type, w->clean_name, "vmem_usage", dt);
+        send_SET("vmem", w->status_vmsize);
+        send_END();
+
+        send_BEGIN(type, w->clean_name, "mem_page_faults", dt);
+        send_SET("minor", (kernel_uint_t)(w->minflt * minflt_fix_ratio) + (include_exited_childs ? ((kernel_uint_t)(w->cminflt * cminflt_fix_ratio)) : 0ULL));
+        send_SET("major", (kernel_uint_t)(w->majflt * majflt_fix_ratio) + (include_exited_childs ? ((kernel_uint_t)(w->cmajflt * cmajflt_fix_ratio)) : 0ULL));
+        send_END();
 
 #ifndef __FreeBSD__
-    send_BEGIN(type, "uptime", dt);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed && w->processes))
-            send_SET(w->name, (global_uptime > w->starttime)?(global_uptime - w->starttime):0);
-    }
-    send_END();
-
-    if (enable_detailed_uptime_charts) {
-        send_BEGIN(type, "uptime_min", dt);
-        for (w = root; w ; w = w->next) {
-            if(unlikely(w->exposed && w->processes))
-                send_SET(w->name, w->uptime_min);
-        }
+        send_BEGIN(type, w->clean_name, "swap_usage", dt);
+        send_SET("swap", w->status_vmswap);
         send_END();
-
-        send_BEGIN(type, "uptime_avg", dt);
-        for (w = root; w ; w = w->next) {
-            if(unlikely(w->exposed && w->processes))
-                send_SET(w->name, w->uptime_sum / w->processes);
-        }
-        send_END();
-
-        send_BEGIN(type, "uptime_max", dt);
-        for (w = root; w ; w = w->next) {
-            if(unlikely(w->exposed && w->processes))
-                send_SET(w->name, w->uptime_max);
-        }
-        send_END();
-    }
 #endif
-
-    send_BEGIN(type, "mem", dt);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed && w->processes))
-            send_SET(w->name, (w->status_vmrss > w->status_vmshared)?(w->status_vmrss - w->status_vmshared):0ULL);
-    }
-    send_END();
-
-    send_BEGIN(type, "rss", dt);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed && w->processes))
-            send_SET(w->name, w->status_vmrss);
-    }
-    send_END();
-
-    send_BEGIN(type, "vmem", dt);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed && w->processes))
-            send_SET(w->name, w->status_vmsize);
-    }
-    send_END();
 
 #ifndef __FreeBSD__
-    send_BEGIN(type, "swap", dt);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed && w->processes))
-            send_SET(w->name, w->status_vmswap);
-    }
-    send_END();
+        if (w->processes == 0) {
+            send_BEGIN(type, w->clean_name, "uptime", dt);
+            send_SET("uptime", 0);
+            send_END();
+
+            if (enable_detailed_uptime_charts) {
+                send_BEGIN(type, w->clean_name, "uptime_summary", dt);
+                send_SET("min", 0);
+                send_SET("avg", 0);
+                send_SET("max", 0);
+                send_END();
+            }
+        } else {
+            send_BEGIN(type, w->clean_name, "uptime", dt);
+            send_SET("uptime", (global_uptime > w->starttime) ? (global_uptime - w->starttime) : 0);
+            send_END();
+
+            if (enable_detailed_uptime_charts) {
+                send_BEGIN(type, w->clean_name, "uptime_summary", dt);
+                send_SET("min", w->uptime_min);
+                send_SET("avg", w->processes > 0 ? w->uptime_sum / w->processes : 0);
+                send_SET("max", w->uptime_max);
+                send_END();
+            }
+        }
 #endif
 
-    send_BEGIN(type, "minor_faults", dt);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed && w->processes))
-            send_SET(w->name, (kernel_uint_t)(w->minflt * minflt_fix_ratio) + (include_exited_childs?((kernel_uint_t)(w->cminflt * cminflt_fix_ratio)):0ULL));
-    }
-    send_END();
-
-    send_BEGIN(type, "major_faults", dt);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed && w->processes))
-            send_SET(w->name, (kernel_uint_t)(w->majflt * majflt_fix_ratio) + (include_exited_childs?((kernel_uint_t)(w->cmajflt * cmajflt_fix_ratio)):0ULL));
-    }
-    send_END();
+        send_BEGIN(type, w->clean_name, "disk_physical_io", dt);
+        send_SET("reads", w->io_storage_bytes_read);
+        send_SET("writes", w->io_storage_bytes_written);
+        send_END();
 
 #ifndef __FreeBSD__
-    send_BEGIN(type, "lreads", dt);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed && w->processes))
-            send_SET(w->name, w->io_logical_bytes_read);
-    }
-    send_END();
-
-    send_BEGIN(type, "lwrites", dt);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed && w->processes))
-            send_SET(w->name, w->io_logical_bytes_written);
-    }
-    send_END();
+        send_BEGIN(type, w->clean_name, "disk_logical_io", dt);
+        send_SET("reads", w->io_logical_bytes_read);
+        send_SET("writes", w->io_logical_bytes_written);
+        send_END();
 #endif
+        if (enable_file_charts) {
+            send_BEGIN(type, w->clean_name, "fds_open_limit", dt);
+            send_SET("limit", w->max_open_files_percent * 100.0);
+            send_END();
 
-    send_BEGIN(type, "preads", dt);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed && w->processes))
-            send_SET(w->name, w->io_storage_bytes_read);
-    }
-    send_END();
-
-    send_BEGIN(type, "pwrites", dt);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed && w->processes))
-            send_SET(w->name, w->io_storage_bytes_written);
-    }
-    send_END();
-
-    if(enable_file_charts) {
-        send_BEGIN(type, "fds_open_limit", dt);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed && w->processes))
-                send_SET(w->name, w->max_open_files_percent * 100.0);
+            send_BEGIN(type, w->clean_name, "fds_open", dt);
+            send_SET("files", w->openfds.files);
+            send_SET("sockets", w->openfds.sockets);
+            send_SET("pipes", w->openfds.sockets);
+            send_SET("inotifies", w->openfds.inotifies);
+            send_SET("event", w->openfds.eventfds);
+            send_SET("timer", w->openfds.timerfds);
+            send_SET("signal", w->openfds.signalfds);
+            send_SET("eventpolls", w->openfds.eventpolls);
+            send_SET("other", w->openfds.other);
+            send_END();
         }
-        send_END();
-
-        send_BEGIN(type, "fds_open", dt);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed && w->processes))
-                send_SET(w->name, pid_openfds_sum(w));
-        }
-        send_END();
-
-        send_BEGIN(type, "fds_files", dt);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed && w->processes))
-                send_SET(w->name, w->openfds.files);
-        }
-        send_END();
-
-        send_BEGIN(type, "fds_sockets", dt);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed && w->processes))
-                send_SET(w->name, w->openfds.sockets);
-        }
-        send_END();
-
-        send_BEGIN(type, "fds_pipes", dt);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed && w->processes))
-                send_SET(w->name, w->openfds.pipes);
-        }
-        send_END();
-
-        send_BEGIN(type, "fds_inotifies", dt);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed && w->processes))
-                send_SET(w->name, w->openfds.inotifies);
-        }
-        send_END();
-
-        send_BEGIN(type, "fds_eventfds", dt);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed && w->processes))
-                send_SET(w->name, w->openfds.eventfds);
-        }
-        send_END();
-
-        send_BEGIN(type, "fds_timerfds", dt);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed && w->processes))
-                send_SET(w->name, w->openfds.timerfds);
-        }
-        send_END();
-
-        send_BEGIN(type, "fds_signalfds", dt);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed && w->processes))
-                send_SET(w->name, w->openfds.signalfds);
-        }
-        send_END();
-
-        send_BEGIN(type, "fds_eventpolls", dt);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed && w->processes))
-                send_SET(w->name, w->openfds.eventpolls);
-        }
-        send_END();
-
-        send_BEGIN(type, "fds_other", dt);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed && w->processes))
-                send_SET(w->name, w->openfds.other);
-        }
-        send_END();
     }
 }
 
@@ -3986,311 +3868,145 @@ static void send_collected_data_to_netdata(struct target *root, const char *type
 // ----------------------------------------------------------------------------
 // generate the charts
 
-static void send_charts_updates_to_netdata(struct target *root, const char *type, const char *title)
+static void send_charts_updates_to_netdata(struct target *root, const char *type, const char *lbl_name, const char *title)
 {
     struct target *w;
-    int newly_added = 0;
 
-    for(w = root ; w ; w = w->next) {
-        if (w->target) continue;
-
-        if(unlikely(w->processes && (debug_enabled || w->debug_enabled))) {
-            struct pid_on_target *pid_on_target;
-
-            fprintf(stderr, "apps.plugin: target '%s' has aggregated %u process%s:", w->name, w->processes, (w->processes == 1)?"":"es");
-
-            for(pid_on_target = w->root_pid; pid_on_target; pid_on_target = pid_on_target->next) {
-                fprintf(stderr, " %d", pid_on_target->pid);
+    if (debug_enabled) {
+        for (w = root; w; w = w->next) {
+            if (unlikely(!w->target && w->processes)) {
+                struct pid_on_target *pid_on_target;
+                fprintf(stderr, "apps.plugin: target '%s' has aggregated %u process(es):", w->name, w->processes);
+                for (pid_on_target = w->root_pid; pid_on_target; pid_on_target = pid_on_target->next) {
+                    fprintf(stderr, " %d", pid_on_target->pid);
+                }
+                fputc('\n', stderr);
             }
-
-            fputc('\n', stderr);
-        }
-
-        if (!w->exposed && w->processes) {
-            newly_added++;
-            w->exposed = 1;
-            if (debug_enabled || w->debug_enabled)
-                debug_log_int("%s just added - regenerating charts.", w->name);
         }
     }
 
-    // nothing more to show
-    if(!newly_added && show_guest_time == show_guest_time_old) return;
+    for (w = root; w; w = w->next) {
+        if (likely(w->exposed || (!w->processes && !w->is_other)))
+            continue;
 
-    // we have something new to show
-    // update the charts
-    fprintf(stdout, "CHART %s.cpu '' '%s CPU Time (100%% = 1 core)' 'percentage' cpu %s.cpu stacked 20001 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute 1 %llu %s\n", w->name, time_factor * RATES_DETAIL / 100, w->hidden ? "hidden" : "");
-    }
-    APPS_PLUGIN_FUNCTIONS();
+        w->exposed = 1;
 
-    fprintf(stdout, "CHART %s.mem '' '%s Real Memory (w/o shared)' 'MiB' mem %s.mem stacked 20003 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute %ld %ld\n", w->name, 1L, 1024L);
-    }
-    APPS_PLUGIN_FUNCTIONS();
-
-    fprintf(stdout, "CHART %s.rss '' '%s Resident Set Size (w/shared)' 'MiB' mem %s.rss stacked 20004 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute %ld %ld\n", w->name, 1L, 1024L);
-    }
-    APPS_PLUGIN_FUNCTIONS();
-
-    fprintf(stdout, "CHART %s.vmem '' '%s Virtual Memory Size' 'MiB' mem %s.vmem stacked 20005 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute %ld %ld\n", w->name, 1L, 1024L);
-    }
-    APPS_PLUGIN_FUNCTIONS();
-
-    fprintf(stdout, "CHART %s.threads '' '%s Threads' 'threads' processes %s.threads stacked 20006 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute 1 1\n", w->name);
-    }
-    APPS_PLUGIN_FUNCTIONS();
-
-    fprintf(stdout, "CHART %s.processes '' '%s Processes' 'processes' processes %s.processes stacked 20007 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute 1 1\n", w->name);
-    }
-    APPS_PLUGIN_FUNCTIONS();
+        fprintf(stdout, "CHART %s.%s_cpu_utilization '' '%s CPU utilization (100%% = 1 core)' 'percentage' cpu %s.cpu_utilization stacked 20001 %d\n", type, w->clean_name, title, type, update_every);
+        fprintf(stdout, "CLABEL '%s' '%s' 1\n", lbl_name, w->name);
+        fprintf(stdout, "CLABEL_COMMIT\n");
+        fprintf(stdout, "DIMENSION user '' absolute 1 %llu\n", time_factor * RATES_DETAIL / 100LLU);
+        fprintf(stdout, "DIMENSION system '' absolute 1 %llu\n", time_factor * RATES_DETAIL / 100LLU);
 
 #ifndef __FreeBSD__
-    fprintf(stdout, "CHART %s.uptime '' '%s Carried Over Uptime' 'seconds' processes %s.uptime line 20008 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute 1 1\n", w->name);
-    }
-    APPS_PLUGIN_FUNCTIONS();
-
-    if (enable_detailed_uptime_charts) {
-        fprintf(stdout, "CHART %s.uptime_min '' '%s Minimum Uptime' 'seconds' processes %s.uptime_min line 20009 %d\n", type, title, type, update_every);
-        for (w = root; w ; w = w->next) {
-            if(unlikely(w->exposed))
-                fprintf(stdout, "DIMENSION %s '' absolute 1 1\n", w->name);
+        if (enable_guest_charts) {
+            fprintf(stdout, "CHART %s.%s_cpu_guest_utilization '' '%s CPU guest utlization (100%% = 1 core)' 'percentage' cpu %s.cpu_guest_utilization line 20005 %d\n", type, w->clean_name, title, type, update_every);
+            fprintf(stdout, "CLABEL '%s' '%s' 1\n", lbl_name, w->name);
+            fprintf(stdout, "CLABEL_COMMIT\n");
+            fprintf(stdout, "DIMENSION guest '' absolute 1 %llu\n", time_factor * RATES_DETAIL / 100LLU);
         }
-        APPS_PLUGIN_FUNCTIONS();
 
-        fprintf(stdout, "CHART %s.uptime_avg '' '%s Average Uptime' 'seconds' processes %s.uptime_avg line 20010 %d\n", type, title, type, update_every);
-        for (w = root; w ; w = w->next) {
-            if(unlikely(w->exposed))
-                fprintf(stdout, "DIMENSION %s '' absolute 1 1\n", w->name);
-        }
-        APPS_PLUGIN_FUNCTIONS();
+        fprintf(stdout, "CHART %s.%s_cpu_context_switches '' '%s CPU context switches' 'switches/s' cpu %s.cpu_context_switches stacked 20010 %d\n", type, w->clean_name, title, type, update_every);
+        fprintf(stdout, "CLABEL '%s' '%s' 1\n", lbl_name, w->name);
+        fprintf(stdout, "CLABEL_COMMIT\n");
+        fprintf(stdout, "DIMENSION voluntary '' absolute 1 %llu\n", RATES_DETAIL);
+        fprintf(stdout, "DIMENSION involuntary '' absolute 1 %llu\n", RATES_DETAIL);
 
-        fprintf(stdout, "CHART %s.uptime_max '' '%s Maximum Uptime' 'seconds' processes %s.uptime_max line 20011 %d\n", type, title, type, update_every);
-        for (w = root; w ; w = w->next) {
-            if(unlikely(w->exposed))
-                fprintf(stdout, "DIMENSION %s '' absolute 1 1\n", w->name);
-        }
-        APPS_PLUGIN_FUNCTIONS();
-    }
+        fprintf(stdout, "CHART %s.%s_mem_private_usage '' '%s memory usage without shared' 'MiB' mem %s.mem_private_usage area 20050 %d\n", type, w->clean_name, title, type, update_every);
+        fprintf(stdout, "CLABEL '%s' '%s' 1\n", lbl_name, w->name);
+        fprintf(stdout, "CLABEL_COMMIT\n");
+        fprintf(stdout, "DIMENSION mem '' absolute %ld %ld\n", 1L, 1024L);
 #endif
 
-    fprintf(stdout, "CHART %s.cpu_user '' '%s CPU User Time (100%% = 1 core)' 'percentage' cpu %s.cpu_user stacked 20020 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute 1 %llu\n", w->name, time_factor * RATES_DETAIL / 100LLU);
-    }
-    APPS_PLUGIN_FUNCTIONS();
+        fprintf(stdout, "CHART %s.%s_mem_usage '' '%s memory RSS usage' 'MiB' mem %s.mem_usage area 20055 %d\n", type, w->clean_name, title, type, update_every);
+        fprintf(stdout, "CLABEL '%s' '%s' 1\n", lbl_name, w->name);
+        fprintf(stdout, "CLABEL_COMMIT\n");
+        fprintf(stdout, "DIMENSION rss '' absolute %ld %ld\n", 1L, 1024L);
 
-    fprintf(stdout, "CHART %s.cpu_system '' '%s CPU System Time (100%% = 1 core)' 'percentage' cpu %s.cpu_system stacked 20021 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute 1 %llu\n", w->name, time_factor * RATES_DETAIL / 100LLU);
-    }
-    APPS_PLUGIN_FUNCTIONS();
+        fprintf(stdout, "CHART %s.%s_mem_page_faults '' '%s memory page faults' 'pgfaults/s' mem %s.mem_page_faults stacked 20060 %d\n", type, w->clean_name, title, type, update_every);
+        fprintf(stdout, "CLABEL '%s' '%s' 1\n", lbl_name, w->name);
+        fprintf(stdout, "CLABEL_COMMIT\n");
+        fprintf(stdout, "DIMENSION major '' absolute 1 %llu\n", RATES_DETAIL);
+        fprintf(stdout, "DIMENSION minor '' absolute 1 %llu\n", RATES_DETAIL);
 
-    if(show_guest_time) {
-        fprintf(stdout, "CHART %s.cpu_guest '' '%s CPU Guest Time (100%% = 1 core)' 'percentage' cpu %s.cpu_guest stacked 20022 %d\n", type, title, type, update_every);
-        for (w = root; w; w = w->next) {
-            if(unlikely(w->exposed))
-                fprintf(stdout, "DIMENSION %s '' absolute 1 %llu\n", w->name, time_factor * RATES_DETAIL / 100LLU);
-        }
-        APPS_PLUGIN_FUNCTIONS();
-    }
+        fprintf(stdout, "CHART %s.%s_vmem_usage '' '%s virtual memory size' 'MiB' mem %s.vmem_usage line 20065 %d\n", type, w->clean_name, title, type, update_every);
+        fprintf(stdout, "CLABEL '%s' '%s' 1\n", lbl_name, w->name);
+        fprintf(stdout, "CLABEL_COMMIT\n");
+        fprintf(stdout, "DIMENSION vmem '' absolute %ld %ld\n", 1L, 1024L);
 
 #ifndef __FreeBSD__
-    fprintf(stdout, "CHART %s.voluntary_ctxt_switches '' '%s Voluntary Context Switches' 'switches/s' cpu %s.voluntary_ctxt_switches stacked 20023 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute 1 %llu\n", w->name, RATES_DETAIL);
-    }
-    APPS_PLUGIN_FUNCTIONS();
-
-    fprintf(stdout, "CHART %s.involuntary_ctxt_switches '' '%s Involuntary Context Switches' 'switches/s' cpu %s.involuntary_ctxt_switches stacked 20024 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute 1 %llu\n", w->name, RATES_DETAIL);
-    }
-    APPS_PLUGIN_FUNCTIONS();
+        fprintf(stdout, "CHART %s.%s_swap_usage '' '%s swap usage' 'MiB' mem %s.swap_usage area 20065 %d\n", type, w->clean_name, title, type, update_every);
+        fprintf(stdout, "CLABEL '%s' '%s' 1\n", lbl_name, w->name);
+        fprintf(stdout, "CLABEL_COMMIT\n");
+        fprintf(stdout, "DIMENSION swap '' absolute %ld %ld\n", 1L, 1024L);
 #endif
 
 #ifndef __FreeBSD__
-    fprintf(stdout, "CHART %s.swap '' '%s Swap Memory' 'MiB' swap %s.swap stacked 20011 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute %ld %ld\n", w->name, 1L, 1024L);
-    }
-    APPS_PLUGIN_FUNCTIONS();
-#endif
+       fprintf(stdout, "CHART %s.%s_disk_physical_io '' '%s disk physical IO' 'KiB/s' disk %s.disk_physical_io area 20100 %d\n", type, w->clean_name, title, type, update_every);
+       fprintf(stdout, "CLABEL '%s' '%s' 1\n", lbl_name, w->name);
+       fprintf(stdout, "CLABEL_COMMIT\n");
+       fprintf(stdout, "DIMENSION reads '' absolute 1 %llu\n", 1024LLU * RATES_DETAIL);
+       fprintf(stdout, "DIMENSION writes '' absolute -1 %llu\n", 1024LLU * RATES_DETAIL);
 
-    fprintf(stdout, "CHART %s.major_faults '' '%s Major Page Faults (swap read)' 'page faults/s' swap %s.major_faults stacked 20012 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute 1 %llu\n", w->name, RATES_DETAIL);
-    }
-    APPS_PLUGIN_FUNCTIONS();
-
-    fprintf(stdout, "CHART %s.minor_faults '' '%s Minor Page Faults' 'page faults/s' mem %s.minor_faults stacked 20011 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute 1 %llu\n", w->name, RATES_DETAIL);
-    }
-    APPS_PLUGIN_FUNCTIONS();
-
-#ifdef __FreeBSD__
-    // FIXME: same metric name as in Linux but different units.
-    fprintf(stdout, "CHART %s.preads '' '%s Disk Reads' 'blocks/s' disk %s.preads stacked 20002 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute 1 %llu\n", w->name, RATES_DETAIL);
-    }
-    APPS_PLUGIN_FUNCTIONS();
-
-    fprintf(stdout, "CHART %s.pwrites '' '%s Disk Writes' 'blocks/s' disk %s.pwrites stacked 20002 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute 1 %llu\n", w->name, RATES_DETAIL);
-    }
-    APPS_PLUGIN_FUNCTIONS();
+       fprintf(stdout, "CHART %s.%s_disk_logical_io '' '%s disk logical IO' 'KiB/s' disk %s.disk_logical_io area 20105 %d\n", type, w->clean_name, title, type, update_every);
+       fprintf(stdout, "CLABEL '%s' '%s' 1\n", lbl_name, w->name);
+       fprintf(stdout, "CLABEL_COMMIT\n");
+       fprintf(stdout, "DIMENSION reads '' absolute 1 %llu\n", 1024LLU * RATES_DETAIL);
+       fprintf(stdout, "DIMENSION writes '' absolute -1 %llu\n", 1024LLU * RATES_DETAIL);
 #else
-    fprintf(stdout, "CHART %s.preads '' '%s Disk Reads' 'KiB/s' disk %s.preads stacked 20002 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute 1 %llu\n", w->name, 1024LLU * RATES_DETAIL);
-    }
-    APPS_PLUGIN_FUNCTIONS();
-
-    fprintf(stdout, "CHART %s.pwrites '' '%s Disk Writes' 'KiB/s' disk %s.pwrites stacked 20002 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute 1 %llu\n", w->name, 1024LLU * RATES_DETAIL);
-    }
-    APPS_PLUGIN_FUNCTIONS();
-
-    fprintf(stdout, "CHART %s.lreads '' '%s Disk Logical Reads' 'KiB/s' disk %s.lreads stacked 20042 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute 1 %llu\n", w->name, 1024LLU * RATES_DETAIL);
-    }
-    APPS_PLUGIN_FUNCTIONS();
-
-    fprintf(stdout, "CHART %s.lwrites '' '%s I/O Logical Writes' 'KiB/s' disk %s.lwrites stacked 20042 %d\n", type, title, type, update_every);
-    for (w = root; w ; w = w->next) {
-        if(unlikely(w->exposed))
-            fprintf(stdout, "DIMENSION %s '' absolute 1 %llu\n", w->name, 1024LLU * RATES_DETAIL);
-    }
-    APPS_PLUGIN_FUNCTIONS();
+       fprintf(stdout, "CHART %s.%s_disk_physical_io '' '%s disk physical IO' 'blocks/s' disk %s.disk_physical_block_io area 20100 %d\n", type, w->clean_name, title, type, update_every);
+       fprintf(stdout, "CLABEL '%s' '%s' 1\n", lbl_name, w->name);
+       fprintf(stdout, "CLABEL_COMMIT\n");
+       fprintf(stdout, "DIMENSION reads '' absolute 1 %llu\n", RATES_DETAIL);
+       fprintf(stdout, "DIMENSION writes '' absolute -1 %llu\n", RATES_DETAIL);
 #endif
 
-    if(enable_file_charts) {
-        fprintf(stdout, "CHART %s.fds_open_limit '' '%s Open File Descriptors Limit' '%%' fds %s.fds_open_limit line 20050 %d\n", type,
-                title, type, update_every);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed))
-                fprintf(stdout, "DIMENSION %s '' absolute 1 100\n", w->name);
-        }
-        APPS_PLUGIN_FUNCTIONS();
+        fprintf(stdout, "CHART %s.%s_processes '' '%s processes' 'processes' processes %s.processes line 20150 %d\n", type, w->clean_name, title, type, update_every);
+        fprintf(stdout, "CLABEL '%s' '%s' 1\n", lbl_name, w->name);
+        fprintf(stdout, "CLABEL_COMMIT\n");
+        fprintf(stdout, "DIMENSION processes '' absolute 1 1\n");
 
-        fprintf(stdout, "CHART %s.fds_open '' '%s Open File Descriptors' 'fds' fds %s.fds_open stacked 20051 %d\n", type,
-                title, type, update_every);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed))
-                fprintf(stdout, "DIMENSION %s '' absolute 1 1\n", w->name);
-        }
-        APPS_PLUGIN_FUNCTIONS();
+        fprintf(stdout, "CHART %s.%s_threads '' '%s threads' 'threads' processes %s.threads line 20155 %d\n", type, w->clean_name, title, type, update_every);
+        fprintf(stdout, "CLABEL '%s' '%s' 1\n", lbl_name, w->name);
+        fprintf(stdout, "CLABEL_COMMIT\n");
+        fprintf(stdout, "DIMENSION threads '' absolute 1 1\n");
 
-        fprintf(stdout, "CHART %s.fds_files '' '%s Open Files' 'fds' fds %s.fds_files stacked 20052 %d\n", type,
-                       title, type, update_every);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed))
-                fprintf(stdout, "DIMENSION %s '' absolute 1 1\n", w->name);
-        }
-        APPS_PLUGIN_FUNCTIONS();
+       if (enable_file_charts) {
+           fprintf(stdout, "CHART %s.%s_fds_open_limit '' '%s open file descriptors limit' '%%' fds %s.fds_open_limit line 20200 %d\n", type, w->clean_name, title, type, update_every);
+           fprintf(stdout, "CLABEL '%s' '%s' 1\n", lbl_name, w->name);
+           fprintf(stdout, "CLABEL_COMMIT\n");
+           fprintf(stdout, "DIMENSION limit '' absolute 1 100\n");
 
-        fprintf(stdout, "CHART %s.fds_sockets '' '%s Open Sockets' 'fds' fds %s.fds_sockets stacked 20053 %d\n",
-                       type, title, type, update_every);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed))
-                fprintf(stdout, "DIMENSION %s '' absolute 1 1\n", w->name);
-        }
-        APPS_PLUGIN_FUNCTIONS();
+           fprintf(stdout, "CHART %s.%s_fds_open '' '%s open files descriptors' 'fds' fds %s.fds_open stacked 20210 %d\n", type, w->clean_name, title, type, update_every);
+           fprintf(stdout, "CLABEL '%s' '%s' 1\n", lbl_name, w->name);
+           fprintf(stdout, "CLABEL_COMMIT\n");
+           fprintf(stdout, "DIMENSION files '' absolute 1 1\n");
+           fprintf(stdout, "DIMENSION sockets '' absolute 1 1\n");
+           fprintf(stdout, "DIMENSION pipes '' absolute 1 1\n");
+           fprintf(stdout, "DIMENSION inotifies '' absolute 1 1\n");
+           fprintf(stdout, "DIMENSION event '' absolute 1 1\n");
+           fprintf(stdout, "DIMENSION timer '' absolute 1 1\n");
+           fprintf(stdout, "DIMENSION signal '' absolute 1 1\n");
+           fprintf(stdout, "DIMENSION eventpolls '' absolute 1 1\n");
+           fprintf(stdout, "DIMENSION other '' absolute 1 1\n");
+       }
 
-        fprintf(stdout, "CHART %s.fds_pipes '' '%s Pipes' 'fds' fds %s.fds_pipes stacked 20054 %d\n", type,
-                       title, type, update_every);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed))
-                fprintf(stdout, "DIMENSION %s '' absolute 1 1\n", w->name);
-        }
-        APPS_PLUGIN_FUNCTIONS();
+#ifndef __FreeBSD__
+       fprintf(stdout, "CHART %s.%s_uptime '' '%s uptime' 'seconds' uptime %s.uptime line 20250 %d\n", type, w->clean_name, title, type, update_every);
+       fprintf(stdout, "CLABEL '%s' '%s' 1\n", lbl_name, w->name);
+       fprintf(stdout, "CLABEL_COMMIT\n");
+       fprintf(stdout, "DIMENSION uptime '' absolute 1 1\n");
 
-        fprintf(stdout, "CHART %s.fds_inotifies '' '%s iNotify File Descriptors' 'fds' fds %s.fds_inotifies stacked 20055 %d\n", type,
-                title, type, update_every);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed))
-                fprintf(stdout, "DIMENSION %s '' absolute 1 1\n", w->name);
-        }
-        APPS_PLUGIN_FUNCTIONS();
-
-        fprintf(stdout, "CHART %s.fds_eventfds '' '%s Event File Descriptors' 'fds' fds %s.fds_eventfds stacked 20056 %d\n", type,
-                title, type, update_every);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed))
-                fprintf(stdout, "DIMENSION %s '' absolute 1 1\n", w->name);
-        }
-        APPS_PLUGIN_FUNCTIONS();
-
-        fprintf(stdout, "CHART %s.fds_timerfds '' '%s Timer File Descriptors' 'fds' fds %s.fds_timerfds stacked 20057 %d\n", type,
-                title, type, update_every);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed))
-                fprintf(stdout, "DIMENSION %s '' absolute 1 1\n", w->name);
-        }
-        APPS_PLUGIN_FUNCTIONS();
-
-        fprintf(stdout, "CHART %s.fds_signalfds '' '%s Signal File Descriptors' 'fds' fds %s.fds_signalfds stacked 20058 %d\n", type,
-                title, type, update_every);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed))
-                fprintf(stdout, "DIMENSION %s '' absolute 1 1\n", w->name);
-        }
-        APPS_PLUGIN_FUNCTIONS();
-
-        fprintf(stdout, "CHART %s.fds_eventpolls '' '%s Event Poll File Descriptors' 'fds' fds %s.fds_eventpolls stacked 20059 %d\n", type,
-                title, type, update_every);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed))
-                fprintf(stdout, "DIMENSION %s '' absolute 1 1\n", w->name);
-        }
-        APPS_PLUGIN_FUNCTIONS();
-
-        fprintf(stdout, "CHART %s.fds_other '' '%s Other File Descriptors' 'fds' fds %s.fds_other stacked 20060 %d\n", type,
-                title, type, update_every);
-        for (w = root; w; w = w->next) {
-            if (unlikely(w->exposed))
-                fprintf(stdout, "DIMENSION %s '' absolute 1 1\n", w->name);
-        }
-        APPS_PLUGIN_FUNCTIONS();
+       if (enable_detailed_uptime_charts) {
+           fprintf(stdout, "CHART %s.%s_uptime_summary '' '%s uptime summary' 'seconds' uptime %s.uptime_summary area 20255 %d\n", type, w->clean_name, title, type, update_every);
+           fprintf(stdout, "CLABEL '%s' '%s' 1\n", lbl_name, w->name);
+           fprintf(stdout, "CLABEL_COMMIT\n");
+           fprintf(stdout, "DIMENSION min '' absolute 1 1\n");
+           fprintf(stdout, "DIMENSION avg '' absolute 1 1\n");
+           fprintf(stdout, "DIMENSION max '' absolute 1 1\n");
+       }
+#endif
     }
 }
-
 
 #ifndef __FreeBSD__
 static void send_proc_states_count(usec_t dt)
@@ -4310,7 +4026,7 @@ static void send_proc_states_count(usec_t dt)
     }
 
     // send process state count
-    send_BEGIN("system", "processes_state", dt);
+    fprintf(stdout, "BEGIN system.processes_state %" PRIu64 "\n", dt);
     for (proc_state i = PROC_STATUS_RUNNING; i < PROC_STATUS_END; i++) {
         send_SET(proc_states[i], proc_state_count[i]);
     }
@@ -4575,7 +4291,7 @@ static int check_capabilities() {
 }
 #endif
 
-static netdata_mutex_t mutex = NETDATA_MUTEX_INITIALIZER;
+static netdata_mutex_t apps_and_stdout_mutex = NETDATA_MUTEX_INITIALIZER;
 
 #define PROCESS_FILTER_CATEGORY "category:"
 #define PROCESS_FILTER_USER "user:"
@@ -4629,8 +4345,8 @@ static void get_MemTotal(void) {
 }
 
 static void apps_plugin_function_processes_help(const char *transaction) {
-    pluginsd_function_result_begin_to_stdout(transaction, HTTP_RESP_OK, "text/plain", now_realtime_sec() + 3600);
-    fprintf(stdout, "%s",
+    BUFFER *wb = buffer_create(0, NULL);
+    buffer_sprintf(wb, "%s",
             "apps.plugin / processes\n"
             "\n"
             "Function `processes` presents all the currently running processes of the system.\n"
@@ -4660,7 +4376,9 @@ static void apps_plugin_function_processes_help(const char *transaction) {
             "\n"
             "Filters can be combined. Each filter can be given only one time.\n"
             );
-    pluginsd_function_result_end_to_stdout();
+
+    pluginsd_function_result_to_stdout(transaction, HTTP_RESP_OK, "text/plain", now_realtime_sec() + 3600, wb);
+    buffer_free(wb);
 }
 
 #define add_value_field_llu_with_max(wb, key, value) do {                                                       \
@@ -4675,7 +4393,7 @@ static void apps_plugin_function_processes_help(const char *transaction) {
     buffer_json_add_array_item_double(wb, _tmp);                                                                \
 } while(0)
 
-static void function_processes(const char *transaction, char *function __maybe_unused, char *line_buffer __maybe_unused, int line_max __maybe_unused, int timeout __maybe_unused) {
+static void function_processes(const char *transaction, char *function __maybe_unused, int timeout __maybe_unused, bool *cancelled __maybe_unused) {
     struct pid_stat *p;
 
     char *words[PLUGINSD_MAX_WORDS] = { NULL };
@@ -4696,21 +4414,24 @@ static void function_processes(const char *transaction, char *function __maybe_u
         if(!category && strncmp(keyword, PROCESS_FILTER_CATEGORY, strlen(PROCESS_FILTER_CATEGORY)) == 0) {
             category = find_target_by_name(apps_groups_root_target, &keyword[strlen(PROCESS_FILTER_CATEGORY)]);
             if(!category) {
-                pluginsd_function_json_error(transaction, HTTP_RESP_BAD_REQUEST, "No category with that name found.");
+                pluginsd_function_json_error_to_stdout(transaction, HTTP_RESP_BAD_REQUEST,
+                                                       "No category with that name found.");
                 return;
             }
         }
         else if(!user && strncmp(keyword, PROCESS_FILTER_USER, strlen(PROCESS_FILTER_USER)) == 0) {
             user = find_target_by_name(users_root_target, &keyword[strlen(PROCESS_FILTER_USER)]);
             if(!user) {
-                pluginsd_function_json_error(transaction, HTTP_RESP_BAD_REQUEST, "No user with that name found.");
+                pluginsd_function_json_error_to_stdout(transaction, HTTP_RESP_BAD_REQUEST,
+                                                       "No user with that name found.");
                 return;
             }
         }
         else if(strncmp(keyword, PROCESS_FILTER_GROUP, strlen(PROCESS_FILTER_GROUP)) == 0) {
             group = find_target_by_name(groups_root_target, &keyword[strlen(PROCESS_FILTER_GROUP)]);
             if(!group) {
-                pluginsd_function_json_error(transaction, HTTP_RESP_BAD_REQUEST, "No group with that name found.");
+                pluginsd_function_json_error_to_stdout(transaction, HTTP_RESP_BAD_REQUEST,
+                                                       "No group with that name found.");
                 return;
             }
         }
@@ -4736,13 +4457,12 @@ static void function_processes(const char *transaction, char *function __maybe_u
         else {
             char msg[PLUGINSD_LINE_MAX];
             snprintfz(msg, PLUGINSD_LINE_MAX, "Invalid parameter '%s'", keyword);
-            pluginsd_function_json_error(transaction, HTTP_RESP_BAD_REQUEST, msg);
+            pluginsd_function_json_error_to_stdout(transaction, HTTP_RESP_BAD_REQUEST, msg);
             return;
         }
     }
 
     time_t expires = now_realtime_sec() + update_every;
-    pluginsd_function_result_begin_to_stdout(transaction, HTTP_RESP_OK, "application/json", expires);
 
     unsigned int cpu_divisor = time_factor * RATES_DETAIL / 100;
     unsigned int memory_divisor = 1024;
@@ -5096,13 +4816,13 @@ static void function_processes(const char *transaction, char *function __maybe_u
                                     RRDF_FIELD_VISUAL_BAR, RRDF_FIELD_TRANSFORM_NUMBER,
                                     2, "KiB/s", LReads_max, RRDF_FIELD_SORT_DESCENDING, NULL, RRDF_FIELD_SUMMARY_SUM,
                                     RRDF_FIELD_FILTER_RANGE,
-                                    RRDF_FIELD_OPTS_VISIBLE, NULL);
+                                    RRDF_FIELD_OPTS_NONE, NULL);
         buffer_rrdf_table_add_field(wb, field_id++, "LWrites", "Logical I/O Writes", RRDF_FIELD_TYPE_BAR_WITH_INTEGER,
                                     RRDF_FIELD_VISUAL_BAR,
                                     RRDF_FIELD_TRANSFORM_NUMBER,
                                     2, "KiB/s", LWrites_max, RRDF_FIELD_SORT_DESCENDING, NULL, RRDF_FIELD_SUMMARY_SUM,
                                     RRDF_FIELD_FILTER_RANGE,
-                                    RRDF_FIELD_OPTS_VISIBLE, NULL);
+                                    RRDF_FIELD_OPTS_NONE, NULL);
 #endif
 
         // I/O calls
@@ -5110,12 +4830,12 @@ static void function_processes(const char *transaction, char *function __maybe_u
                                     RRDF_FIELD_VISUAL_BAR, RRDF_FIELD_TRANSFORM_NUMBER, 2,
                                     "calls/s", RCalls_max, RRDF_FIELD_SORT_DESCENDING, NULL, RRDF_FIELD_SUMMARY_SUM,
                                     RRDF_FIELD_FILTER_RANGE,
-                                    RRDF_FIELD_OPTS_VISIBLE, NULL);
+                                    RRDF_FIELD_OPTS_NONE, NULL);
         buffer_rrdf_table_add_field(wb, field_id++, "WCalls", "I/O Write Calls", RRDF_FIELD_TYPE_BAR_WITH_INTEGER,
                                     RRDF_FIELD_VISUAL_BAR, RRDF_FIELD_TRANSFORM_NUMBER, 2,
                                     "calls/s", WCalls_max, RRDF_FIELD_SORT_DESCENDING, NULL, RRDF_FIELD_SUMMARY_SUM,
                                     RRDF_FIELD_FILTER_RANGE,
-                                    RRDF_FIELD_OPTS_VISIBLE, NULL);
+                                    RRDF_FIELD_OPTS_NONE, NULL);
 
         // minor page faults
         buffer_rrdf_table_add_field(wb, field_id++, "MinFlt", "Minor Page Faults/s", RRDF_FIELD_TYPE_BAR_WITH_INTEGER,
@@ -5153,7 +4873,7 @@ static void function_processes(const char *transaction, char *function __maybe_u
                                     RRDF_FIELD_TYPE_BAR_WITH_INTEGER, RRDF_FIELD_VISUAL_BAR,
                                     RRDF_FIELD_TRANSFORM_NUMBER, 2, "pgflts/s", TMajFlt_max, RRDF_FIELD_SORT_DESCENDING,
                                     NULL, RRDF_FIELD_SUMMARY_SUM, RRDF_FIELD_FILTER_RANGE,
-                                    RRDF_FIELD_OPTS_VISIBLE, NULL);
+                                    RRDF_FIELD_OPTS_NONE, NULL);
 
         // open file descriptors
         buffer_rrdf_table_add_field(wb, field_id++, "FDsLimitPercent", "Percentage of Open Descriptors vs Limits",
@@ -5165,24 +4885,24 @@ static void function_processes(const char *transaction, char *function __maybe_u
                                     RRDF_FIELD_TYPE_BAR_WITH_INTEGER, RRDF_FIELD_VISUAL_BAR,
                                     RRDF_FIELD_TRANSFORM_NUMBER, 0, "fds", FDs_max, RRDF_FIELD_SORT_DESCENDING, NULL,
                                     RRDF_FIELD_SUMMARY_SUM, RRDF_FIELD_FILTER_RANGE,
-                                    RRDF_FIELD_OPTS_VISIBLE, NULL);
+                                    RRDF_FIELD_OPTS_NONE, NULL);
         buffer_rrdf_table_add_field(wb, field_id++, "Files", "Open Files", RRDF_FIELD_TYPE_BAR_WITH_INTEGER,
                                     RRDF_FIELD_VISUAL_BAR, RRDF_FIELD_TRANSFORM_NUMBER, 0,
                                     "fds",
                                     Files_max, RRDF_FIELD_SORT_DESCENDING, NULL, RRDF_FIELD_SUMMARY_SUM,
                                     RRDF_FIELD_FILTER_RANGE,
-                                    RRDF_FIELD_OPTS_VISIBLE, NULL);
+                                    RRDF_FIELD_OPTS_NONE, NULL);
         buffer_rrdf_table_add_field(wb, field_id++, "Pipes", "Open Pipes", RRDF_FIELD_TYPE_BAR_WITH_INTEGER,
                                     RRDF_FIELD_VISUAL_BAR, RRDF_FIELD_TRANSFORM_NUMBER, 0,
                                     "fds",
                                     Pipes_max, RRDF_FIELD_SORT_DESCENDING, NULL, RRDF_FIELD_SUMMARY_SUM,
                                     RRDF_FIELD_FILTER_RANGE,
-                                    RRDF_FIELD_OPTS_VISIBLE, NULL);
+                                    RRDF_FIELD_OPTS_NONE, NULL);
         buffer_rrdf_table_add_field(wb, field_id++, "Sockets", "Open Sockets", RRDF_FIELD_TYPE_BAR_WITH_INTEGER,
                                     RRDF_FIELD_VISUAL_BAR, RRDF_FIELD_TRANSFORM_NUMBER, 0,
                                     "fds", Sockets_max, RRDF_FIELD_SORT_DESCENDING, NULL, RRDF_FIELD_SUMMARY_SUM,
                                     RRDF_FIELD_FILTER_RANGE,
-                                    RRDF_FIELD_OPTS_VISIBLE, NULL);
+                                    RRDF_FIELD_OPTS_NONE, NULL);
         buffer_rrdf_table_add_field(wb, field_id++, "iNotiFDs", "Open iNotify Descriptors",
                                     RRDF_FIELD_TYPE_BAR_WITH_INTEGER, RRDF_FIELD_VISUAL_BAR,
                                     RRDF_FIELD_TRANSFORM_NUMBER, 0, "fds", iNotiFDs_max, RRDF_FIELD_SORT_DESCENDING,
@@ -5219,12 +4939,12 @@ static void function_processes(const char *transaction, char *function __maybe_u
                                     RRDF_FIELD_VISUAL_BAR, RRDF_FIELD_TRANSFORM_NUMBER, 0,
                                     "processes", Processes_max, RRDF_FIELD_SORT_DESCENDING, NULL,
                                     RRDF_FIELD_SUMMARY_SUM, RRDF_FIELD_FILTER_RANGE,
-                                    RRDF_FIELD_OPTS_VISIBLE, NULL);
+                                    RRDF_FIELD_OPTS_NONE, NULL);
         buffer_rrdf_table_add_field(wb, field_id++, "Threads", "Threads", RRDF_FIELD_TYPE_BAR_WITH_INTEGER,
                                     RRDF_FIELD_VISUAL_BAR, RRDF_FIELD_TRANSFORM_NUMBER, 0,
                                     "threads", Threads_max, RRDF_FIELD_SORT_DESCENDING, NULL, RRDF_FIELD_SUMMARY_SUM,
                                     RRDF_FIELD_FILTER_RANGE,
-                                    RRDF_FIELD_OPTS_VISIBLE, NULL);
+                                    RRDF_FIELD_OPTS_NONE, NULL);
         buffer_rrdf_table_add_field(wb, field_id++, "Uptime", "Uptime in seconds", RRDF_FIELD_TYPE_DURATION,
                                     RRDF_FIELD_VISUAL_BAR, RRDF_FIELD_TRANSFORM_DURATION_S, 2,
                                     "seconds", Uptime_max, RRDF_FIELD_SORT_DESCENDING, NULL, RRDF_FIELD_SUMMARY_MAX,
@@ -5520,86 +5240,18 @@ static void function_processes(const char *transaction, char *function __maybe_u
     buffer_json_member_add_time_t(wb, "expires", expires);
     buffer_json_finalize(wb);
 
-    fwrite(buffer_tostring(wb), buffer_strlen(wb), 1, stdout);
-    buffer_free(wb);
+    pluginsd_function_result_to_stdout(transaction, HTTP_RESP_OK, "application/json", expires, wb);
 
-    pluginsd_function_result_end_to_stdout();
+    buffer_free(wb);
 }
 
 static bool apps_plugin_exit = false;
 
-static void *reader_main(void *arg __maybe_unused) {
-    char buffer[PLUGINSD_LINE_MAX + 1];
-
-    char *s = NULL;
-    while(!apps_plugin_exit && (s = fgets(buffer, PLUGINSD_LINE_MAX, stdin))) {
-
-        char *words[PLUGINSD_MAX_WORDS] = { NULL };
-        size_t num_words = quoted_strings_splitter_pluginsd(buffer, words, PLUGINSD_MAX_WORDS);
-
-        const char *keyword = get_word(words, num_words, 0);
-
-        if(keyword && strcmp(keyword, PLUGINSD_KEYWORD_FUNCTION) == 0) {
-            char *transaction = get_word(words, num_words, 1);
-            char *timeout_s = get_word(words, num_words, 2);
-            char *function = get_word(words, num_words, 3);
-
-            if(!transaction || !*transaction || !timeout_s || !*timeout_s || !function || !*function) {
-                netdata_log_error("Received incomplete %s (transaction = '%s', timeout = '%s', function = '%s'). Ignoring it.",
-                      keyword,
-                      transaction?transaction:"(unset)",
-                      timeout_s?timeout_s:"(unset)",
-                      function?function:"(unset)");
-            }
-            else {
-                int timeout = str2i(timeout_s);
-                if(timeout <= 0) timeout = PLUGINS_FUNCTIONS_TIMEOUT_DEFAULT;
-
-//                internal_error(true, "Received function '%s', transaction '%s', timeout %d", function, transaction, timeout);
-
-                netdata_mutex_lock(&mutex);
-
-                if(strncmp(function, "processes", strlen("processes")) == 0)
-                    function_processes(transaction, function, buffer, PLUGINSD_LINE_MAX + 1, timeout);
-                else
-                    pluginsd_function_json_error(transaction, HTTP_RESP_NOT_FOUND, "No function with this name found in apps.plugin.");
-
-                fflush(stdout);
-                netdata_mutex_unlock(&mutex);
-
-//                internal_error(true, "Done with function '%s', transaction '%s', timeout %d", function, transaction, timeout);
-            }
-        }
-        else
-            netdata_log_error("Received unknown command: %s", keyword?keyword:"(unset)");
-    }
-
-    if(!s || feof(stdin) || ferror(stdin)) {
-        apps_plugin_exit = true;
-        netdata_log_error("Received error on stdin.");
-    }
-
-    exit(1);
-    return NULL;
-}
-
 int main(int argc, char **argv) {
-    // debug_flags = D_PROCFILE;
-    stderror = stderr;
-
     clocks_init();
+    nd_log_initialize_for_external_plugins("apps.plugin");
 
     pagesize = (size_t)sysconf(_SC_PAGESIZE);
-
-    // set the name for logging
-    program_name = "apps.plugin";
-
-    // disable syslog for apps.plugin
-    error_log_syslog = 0;
-
-    // set errors flood protection to 100 logs per hour
-    error_log_errors_per_period = 100;
-    error_log_throttle_period = 3600;
 
     bool send_resource_usage = true;
     {
@@ -5686,10 +5338,17 @@ int main(int argc, char **argv) {
 
     all_pids          = callocz(sizeof(struct pid_stat *), (size_t) pid_max + 1);
 
-    netdata_thread_t reader_thread;
-    netdata_thread_create(&reader_thread, "APPS_READER", NETDATA_THREAD_OPTION_DONT_LOG, reader_main, NULL);
-    netdata_mutex_lock(&mutex);
+    // ------------------------------------------------------------------------
+    // the event loop for functions
 
+    struct functions_evloop_globals *wg =
+            functions_evloop_init(1, "APPS", &apps_and_stdout_mutex, &apps_plugin_exit);
+
+    functions_evloop_add_function(wg, "processes", function_processes, PLUGINS_FUNCTIONS_TIMEOUT_DEFAULT);
+
+    // ------------------------------------------------------------------------
+
+    netdata_mutex_lock(&apps_and_stdout_mutex);
     APPS_PLUGIN_GLOBAL_FUNCTIONS();
 
     usec_t step = update_every * USEC_PER_SEC;
@@ -5697,7 +5356,7 @@ int main(int argc, char **argv) {
     heartbeat_t hb;
     heartbeat_init(&hb);
     for(; !apps_plugin_exit ; global_iterations_counter++) {
-        netdata_mutex_unlock(&mutex);
+        netdata_mutex_unlock(&apps_and_stdout_mutex);
 
 #ifdef NETDATA_PROFILING
 #warning "compiling for profiling"
@@ -5708,17 +5367,15 @@ int main(int argc, char **argv) {
 #else
         usec_t dt = heartbeat_next(&hb, step);
 #endif
-        netdata_mutex_lock(&mutex);
+        netdata_mutex_lock(&apps_and_stdout_mutex);
 
         struct pollfd pollfd = { .fd = fileno(stdout), .events = POLLERR };
         if (unlikely(poll(&pollfd, 1, 0) < 0)) {
-            netdata_mutex_unlock(&mutex);
-            netdata_thread_cancel(reader_thread);
+            netdata_mutex_unlock(&apps_and_stdout_mutex);
             fatal("Cannot check if a pipe is available");
         }
         if (unlikely(pollfd.revents & POLLERR)) {
-            netdata_mutex_unlock(&mutex);
-            netdata_thread_cancel(reader_thread);
+            netdata_mutex_unlock(&apps_and_stdout_mutex);
             fatal("Received error on read pipe.");
         }
 
@@ -5728,8 +5385,7 @@ int main(int argc, char **argv) {
         if(!collect_data_for_all_processes()) {
             netdata_log_error("Cannot collect /proc data for running processes. Disabling apps.plugin...");
             printf("DISABLE\n");
-            netdata_mutex_unlock(&mutex);
-            netdata_thread_cancel(reader_thread);
+            netdata_mutex_unlock(&apps_and_stdout_mutex);
             exit(1);
         }
 
@@ -5743,21 +5399,18 @@ int main(int argc, char **argv) {
         send_proc_states_count(dt);
 #endif
 
-        // this is smart enough to show only newly added apps, when needed
-        send_charts_updates_to_netdata(apps_groups_root_target, "apps", "Apps");
-        if(likely(enable_users_charts))
-            send_charts_updates_to_netdata(users_root_target, "users", "Users");
+        send_charts_updates_to_netdata(apps_groups_root_target, "app", "app_group", "Apps");
+        send_collected_data_to_netdata(apps_groups_root_target, "app", dt);
 
-        if(likely(enable_groups_charts))
-            send_charts_updates_to_netdata(groups_root_target, "groups", "User Groups");
+        if (enable_users_charts) {
+            send_charts_updates_to_netdata(users_root_target, "user", "user", "Users");
+            send_collected_data_to_netdata(users_root_target, "user", dt);
+        }
 
-        send_collected_data_to_netdata(apps_groups_root_target, "apps", dt);
-
-        if(likely(enable_users_charts))
-            send_collected_data_to_netdata(users_root_target, "users", dt);
-
-        if(likely(enable_groups_charts))
-            send_collected_data_to_netdata(groups_root_target, "groups", dt);
+        if (enable_groups_charts) {
+            send_charts_updates_to_netdata(groups_root_target, "usergroup", "user_group", "User Groups");
+            send_collected_data_to_netdata(groups_root_target, "usergroup", dt);
+        }
 
         fflush(stdout);
 
@@ -5765,5 +5418,5 @@ int main(int argc, char **argv) {
 
         debug_log("done Loop No %zu", global_iterations_counter);
     }
-    netdata_mutex_unlock(&mutex);
+    netdata_mutex_unlock(&apps_and_stdout_mutex);
 }

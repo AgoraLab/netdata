@@ -240,7 +240,7 @@ DICTIONARY *zfs_pools = NULL;
 void disable_zfs_pool_state(struct zfs_pool *pool)
 {
     if (pool->st)
-        rrdset_is_obsolete(pool->st);
+        rrdset_is_obsolete___safe_from_collector_thread(pool->st);
 
     pool->st = NULL;
 
@@ -335,7 +335,10 @@ int do_proc_spl_kstat_zfs_pool_state(int update_every, usec_t dt)
     if (likely(do_zfs_pool_state)) {
         DIR *dir = opendir(dirname);
         if (unlikely(!dir)) {
-            collector_error("Cannot read directory '%s'", dirname);
+            if (errno == ENOENT)
+                collector_info("Cannot read directory '%s'", dirname);
+            else
+                collector_error("Cannot read directory '%s'", dirname);
             return 1;
         }
 

@@ -58,8 +58,9 @@ void netdev_rename_device_add(
     const char *host_device,
     const char *container_device,
     const char *container_name,
-    DICTIONARY *labels,
-    const char *ctx_prefix);
+    RRDLABELS *labels,
+    const char *ctx_prefix,
+    const DICTIONARY_ITEM *cgroup_netdev_link);
 
 void netdev_rename_device_del(const char *host_device);
 

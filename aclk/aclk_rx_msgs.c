@@ -108,7 +108,7 @@ static inline int aclk_v2_payload_get_query(const char *payload, char **query_ur
     }
     start = payload + 4;
 
-    if(!(end = strstr(payload, " HTTP/1.1\x0D\x0A"))) {
+    if(!(end = strstr(payload, HTTP_1_1 HTTP_ENDL))) {
         errno = 0;
         netdata_log_error("Doesn't look like HTTP GET request.");
         return 1;
@@ -449,13 +449,13 @@ int stop_streaming_contexts(const char *msg, size_t msg_len)
 
 int cancel_pending_req(const char *msg, size_t msg_len)
 {
-    struct aclk_cancel_pending_req cmd;
+    struct aclk_cancel_pending_req cmd = {.request_id = NULL, .trace_id = NULL};
     if(parse_cancel_pending_req(msg, msg_len, &cmd)) {
         error_report("Error parsing CancelPendingReq");
         return 1;
     }
 
-    netdata_log_access("ACLK CancelPendingRequest REQ: %s, cloud trace-id: %s", cmd.request_id, cmd.trace_id);
+    nd_log(NDLS_ACCESS, NDLP_NOTICE, "ACLK CancelPendingRequest REQ: %s, cloud trace-id: %s", cmd.request_id, cmd.trace_id);
 
     if (mark_pending_req_cancelled(cmd.request_id))
         error_report("CancelPending Request for %s failed. No such pending request.", cmd.request_id);

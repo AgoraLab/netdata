@@ -65,6 +65,11 @@ static struct global_statistics {
     uint64_t backfill_queries_made;
     uint64_t backfill_db_points_read;
 
+    uint64_t tier0_hot_gorilla_buffers;
+
+    uint64_t tier0_disk_compressed_bytes;
+    uint64_t tier0_disk_uncompressed_bytes;
+
     uint64_t db_points_stored_per_tier[RRD_STORAGE_TIERS];
 
 } global_statistics = {
@@ -80,6 +85,10 @@ static struct global_statistics {
         .api_data_queries_made = 0,
         .api_data_db_points_read = 0,
         .api_data_result_points_generated = 0,
+
+        .tier0_hot_gorilla_buffers = 0,
+        .tier0_disk_compressed_bytes = 0,
+        .tier0_disk_uncompressed_bytes = 0,
 };
 
 void global_statistics_rrdset_done_chart_collection_completed(size_t *points_read_per_tier_array) {
@@ -106,6 +115,18 @@ void global_statistics_exporters_query_completed(size_t points_read) {
 void global_statistics_backfill_query_completed(size_t points_read) {
     __atomic_fetch_add(&global_statistics.backfill_queries_made, 1, __ATOMIC_RELAXED);
     __atomic_fetch_add(&global_statistics.backfill_db_points_read, points_read, __ATOMIC_RELAXED);
+}
+
+void global_statistics_gorilla_buffer_add_hot() {
+    __atomic_fetch_add(&global_statistics.tier0_hot_gorilla_buffers, 1, __ATOMIC_RELAXED);
+}
+
+void global_statistics_tier0_disk_compressed_bytes(uint32_t size) {
+    __atomic_fetch_add(&global_statistics.tier0_disk_compressed_bytes, size, __ATOMIC_RELAXED);
+}
+
+void global_statistics_tier0_disk_uncompressed_bytes(uint32_t size) {
+    __atomic_fetch_add(&global_statistics.tier0_disk_uncompressed_bytes, size, __ATOMIC_RELAXED);
 }
 
 void global_statistics_rrdr_query_completed(size_t queries, uint64_t db_points_read, uint64_t result_points_generated, QUERY_SOURCE query_source) {
@@ -209,6 +230,11 @@ static inline void global_statistics_copy(struct global_statistics *gs, uint8_t 
     gs->exporters_db_points_read     = __atomic_load_n(&global_statistics.exporters_db_points_read, __ATOMIC_RELAXED);
     gs->backfill_queries_made       = __atomic_load_n(&global_statistics.backfill_queries_made, __ATOMIC_RELAXED);
     gs->backfill_db_points_read     = __atomic_load_n(&global_statistics.backfill_db_points_read, __ATOMIC_RELAXED);
+
+    gs->tier0_hot_gorilla_buffers     = __atomic_load_n(&global_statistics.tier0_hot_gorilla_buffers, __ATOMIC_RELAXED);
+
+    gs->tier0_disk_compressed_bytes = __atomic_load_n(&global_statistics.tier0_disk_compressed_bytes, __ATOMIC_RELAXED);
+    gs->tier0_disk_uncompressed_bytes = __atomic_load_n(&global_statistics.tier0_disk_uncompressed_bytes, __ATOMIC_RELAXED);
 
     for(size_t tier = 0; tier < storage_tiers ;tier++)
         gs->db_points_stored_per_tier[tier] = __atomic_load_n(&global_statistics.db_points_stored_per_tier[tier], __ATOMIC_RELAXED);
@@ -816,7 +842,7 @@ static void global_statistics_charts(void) {
 
             for(size_t tier = 0; tier < storage_tiers ;tier++) {
                 char buf[30 + 1];
-                snprintfz(buf, 30, "tier%zu", tier);
+                snprintfz(buf, sizeof(buf) - 1, "tier%zu", tier);
                 rds[tier] = rrddim_add(st_points_stored, buf, NULL, 1, 1, RRD_ALGORITHM_INCREMENTAL);
             }
         }
@@ -828,6 +854,72 @@ static void global_statistics_charts(void) {
     }
 
     ml_update_global_statistics_charts(gs.ml_models_consulted);
+
+    // ----------------------------------------------------------------
+
+#ifdef ENABLE_DBENGINE
+    if (tier_page_type[0] == PAGE_GORILLA_METRICS)
+    {
+        static RRDSET *st_tier0_gorilla_pages = NULL;
+        static RRDDIM *rd_num_gorilla_pages = NULL;
+
+        if (unlikely(!st_tier0_gorilla_pages)) {
+            st_tier0_gorilla_pages = rrdset_create_localhost(
+                    "netdata"
+                    , "tier0_gorilla_pages"
+                    , NULL
+                    , "tier0_gorilla_pages"
+                    , NULL
+                    , "Number of gorilla_pages"
+                    , "count"
+                    , "netdata"
+                    , "stats"
+                    , 131004
+                    , localhost->rrd_update_every
+                    , RRDSET_TYPE_LINE
+            );
+
+            rd_num_gorilla_pages = rrddim_add(st_tier0_gorilla_pages, "count", NULL, 1, 1, RRD_ALGORITHM_INCREMENTAL);
+        }
+
+        rrddim_set_by_pointer(st_tier0_gorilla_pages, rd_num_gorilla_pages, (collected_number)gs.tier0_hot_gorilla_buffers);
+
+        rrdset_done(st_tier0_gorilla_pages);
+    }
+
+    if (tier_page_type[0] == PAGE_GORILLA_METRICS)
+    {
+        static RRDSET *st_tier0_compression_info = NULL;
+
+        static RRDDIM *rd_compressed_bytes = NULL;
+        static RRDDIM *rd_uncompressed_bytes = NULL;
+
+        if (unlikely(!st_tier0_compression_info)) {
+            st_tier0_compression_info = rrdset_create_localhost(
+                    "netdata"
+                    , "tier0_compression_info"
+                    , NULL
+                    , "tier0_compression_info"
+                    , NULL
+                    , "Tier 0 compression info"
+                    , "bytes"
+                    , "netdata"
+                    , "stats"
+                    , 131005
+                    , localhost->rrd_update_every
+                    , RRDSET_TYPE_LINE
+            );
+
+            rd_compressed_bytes = rrddim_add(st_tier0_compression_info, "compressed", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
+            rd_uncompressed_bytes = rrddim_add(st_tier0_compression_info, "uncompressed", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
+        }
+
+        rrddim_set_by_pointer(st_tier0_compression_info, rd_compressed_bytes, (collected_number)gs.tier0_disk_compressed_bytes);
+        rrddim_set_by_pointer(st_tier0_compression_info, rd_uncompressed_bytes, (collected_number)gs.tier0_disk_uncompressed_bytes);
+
+        rrdset_done(st_tier0_compression_info);
+    }
+#endif
 }
 
 // ----------------------------------------------------------------------------
@@ -1881,8 +1973,6 @@ static void dbengine2_statistics_charts(void) {
         static RRDDIM *rd_mrg_metrics = NULL;
         static RRDDIM *rd_mrg_acquired = NULL;
         static RRDDIM *rd_mrg_collected = NULL;
-        static RRDDIM *rd_mrg_with_retention = NULL;
-        static RRDDIM *rd_mrg_without_retention = NULL;
         static RRDDIM *rd_mrg_multiple_writers = NULL;
 
         if (unlikely(!st_mrg_metrics)) {
@@ -1903,8 +1993,6 @@ static void dbengine2_statistics_charts(void) {
             rd_mrg_metrics = rrddim_add(st_mrg_metrics, "all", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
             rd_mrg_acquired = rrddim_add(st_mrg_metrics, "acquired", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
             rd_mrg_collected = rrddim_add(st_mrg_metrics, "collected", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
-            rd_mrg_with_retention = rrddim_add(st_mrg_metrics, "with retention", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
-            rd_mrg_without_retention = rrddim_add(st_mrg_metrics, "without retention", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
             rd_mrg_multiple_writers = rrddim_add(st_mrg_metrics, "multi-collected", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
         }
         priority++;
@@ -1912,8 +2000,6 @@ static void dbengine2_statistics_charts(void) {
         rrddim_set_by_pointer(st_mrg_metrics, rd_mrg_metrics, (collected_number)mrg_stats.entries);
         rrddim_set_by_pointer(st_mrg_metrics, rd_mrg_acquired, (collected_number)mrg_stats.entries_referenced);
         rrddim_set_by_pointer(st_mrg_metrics, rd_mrg_collected, (collected_number)mrg_stats.writers);
-        rrddim_set_by_pointer(st_mrg_metrics, rd_mrg_with_retention, (collected_number)mrg_stats.entries_with_retention);
-        rrddim_set_by_pointer(st_mrg_metrics, rd_mrg_without_retention, (collected_number)mrg_stats.entries - (collected_number)mrg_stats.entries_with_retention);
         rrddim_set_by_pointer(st_mrg_metrics, rd_mrg_multiple_writers, (collected_number)mrg_stats.writers_conflicts);
 
         rrdset_done(st_mrg_metrics);
@@ -2681,9 +2767,12 @@ static void dbengine2_statistics_charts(void) {
 
 static void update_strings_charts() {
     static RRDSET *st_ops = NULL, *st_entries = NULL, *st_mem = NULL;
-    static RRDDIM *rd_ops_inserts = NULL, *rd_ops_deletes = NULL, *rd_ops_searches = NULL, *rd_ops_duplications = NULL, *rd_ops_releases = NULL;
-    static RRDDIM *rd_entries_entries = NULL, *rd_entries_refs = NULL;
+    static RRDDIM *rd_ops_inserts = NULL, *rd_ops_deletes = NULL;
+    static RRDDIM *rd_entries_entries = NULL;
     static RRDDIM *rd_mem = NULL;
+#ifdef NETDATA_INTERNAL_CHECKS
+    static RRDDIM *rd_entries_refs = NULL, *rd_ops_releases = NULL,  *rd_ops_duplications = NULL, *rd_ops_searches = NULL;
+#endif
 
     size_t inserts, deletes, searches, entries, references, memory, duplications, releases;
 
@@ -2706,16 +2795,20 @@ static void update_strings_charts() {
 
         rd_ops_inserts      = rrddim_add(st_ops, "inserts",      NULL,  1, 1, RRD_ALGORITHM_INCREMENTAL);
         rd_ops_deletes      = rrddim_add(st_ops, "deletes",      NULL, -1, 1, RRD_ALGORITHM_INCREMENTAL);
+#ifdef NETDATA_INTERNAL_CHECKS
         rd_ops_searches     = rrddim_add(st_ops, "searches",     NULL,  1, 1, RRD_ALGORITHM_INCREMENTAL);
         rd_ops_duplications = rrddim_add(st_ops, "duplications", NULL,  1, 1, RRD_ALGORITHM_INCREMENTAL);
         rd_ops_releases     = rrddim_add(st_ops, "releases",     NULL, -1, 1, RRD_ALGORITHM_INCREMENTAL);
+#endif
     }
 
     rrddim_set_by_pointer(st_ops, rd_ops_inserts,      (collected_number)inserts);
     rrddim_set_by_pointer(st_ops, rd_ops_deletes,      (collected_number)deletes);
+#ifdef NETDATA_INTERNAL_CHECKS
     rrddim_set_by_pointer(st_ops, rd_ops_searches,     (collected_number)searches);
     rrddim_set_by_pointer(st_ops, rd_ops_duplications, (collected_number)duplications);
     rrddim_set_by_pointer(st_ops, rd_ops_releases,     (collected_number)releases);
+#endif
     rrdset_done(st_ops);
 
     if (unlikely(!st_entries)) {
@@ -2734,11 +2827,15 @@ static void update_strings_charts() {
             , RRDSET_TYPE_AREA);
 
         rd_entries_entries  = rrddim_add(st_entries, "entries", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
+#ifdef NETDATA_INTERNAL_CHECKS
         rd_entries_refs  = rrddim_add(st_entries, "references", NULL, 1, -1, RRD_ALGORITHM_ABSOLUTE);
+#endif
     }
 
     rrddim_set_by_pointer(st_entries, rd_entries_entries, (collected_number)entries);
+#ifdef NETDATA_INTERNAL_CHECKS
     rrddim_set_by_pointer(st_entries, rd_entries_refs, (collected_number)references);
+#endif
     rrdset_done(st_entries);
 
     if (unlikely(!st_mem)) {
@@ -2813,6 +2910,7 @@ struct dictionary_stats dictionary_stats_category_rrdhealth = { .name = "health"
 struct dictionary_stats dictionary_stats_category_functions = { .name = "functions" };
 struct dictionary_stats dictionary_stats_category_replication = { .name = "replication" };
 
+#ifdef DICT_WITH_STATS
 struct dictionary_categories {
     struct dictionary_stats *stats;
     const char *family;
@@ -3165,6 +3263,13 @@ static void update_dictionary_category_charts(struct dictionary_categories *c) {
     }
 }
 
+static void dictionary_statistics(void) {
+    for(int i = 0; dictionary_categories[i].stats ;i++) {
+        update_dictionary_category_charts(&dictionary_categories[i]);
+    }
+}
+#endif // DICT_WITH_STATS
+
 #ifdef NETDATA_TRACE_ALLOCATIONS
 
 struct memory_trace_data {
@@ -3304,12 +3409,6 @@ static void malloc_trace_statistics(void) {
 }
 #endif
 
-static void dictionary_statistics(void) {
-    for(int i = 0; dictionary_categories[i].stats ;i++) {
-        update_dictionary_category_charts(&dictionary_categories[i]);
-    }
-}
-
 // ---------------------------------------------------------------------------------------------------------------------
 // worker utilization
 
@@ -3432,6 +3531,7 @@ static struct worker_utilization all_workers_utilization[] = {
     { .name = "TC",          .family = "workers plugin tc",               .priority = 1000000 },
     { .name = "TIMEX",       .family = "workers plugin timex",            .priority = 1000000 },
     { .name = "IDLEJITTER",  .family = "workers plugin idlejitter",       .priority = 1000000 },
+    { .name = "LOGSMANAGPLG",.family = "workers plugin logs management",  .priority = 1000000 },
     { .name = "RRDCONTEXT",  .family = "workers contexts",                .priority = 1000000 },
     { .name = "REPLICATION", .family = "workers replication sender",      .priority = 1000000 },
     { .name = "SERVICE",     .family = "workers service",                 .priority = 1000000 },
@@ -4171,8 +4271,10 @@ void *global_statistics_main(void *ptr)
         worker_is_busy(WORKER_JOB_STRINGS);
         update_strings_charts();
 
+#ifdef DICT_WITH_STATS
         worker_is_busy(WORKER_JOB_DICTIONARIES);
         dictionary_statistics();
+#endif
 
 #ifdef NETDATA_TRACE_ALLOCATIONS
         worker_is_busy(WORKER_JOB_MALLOC_TRACE);

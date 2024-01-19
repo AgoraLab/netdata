@@ -48,6 +48,7 @@ typedef enum __attribute__((packed)) {
     BIB_FEATURE_CLOUD,
     BIB_FEATURE_HEALTH,
     BIB_FEATURE_STREAMING,
+    BIB_FEATURE_BACKFILLING,
     BIB_FEATURE_REPLICATION,
     BIB_FEATURE_STREAMING_COMPRESSION,
     BIB_FEATURE_CONTEXTS,
@@ -66,6 +67,7 @@ typedef enum __attribute__((packed)) {
     BIB_CONNECTIVITY_NATIVE_HTTPS,
     BIB_CONNECTIVITY_TLS_HOST_VERIFY,
     BIB_LIB_LZ4,
+    BIB_LIB_ZSTD,
     BIB_LIB_ZLIB,
     BIB_LIB_JUDY,
     BIB_LIB_DLIB,
@@ -99,6 +101,7 @@ typedef enum __attribute__((packed)) {
     BIB_PLUGIN_SLABINFO,
     BIB_PLUGIN_XEN,
     BIB_PLUGIN_XEN_VBD_ERROR,
+    BIB_PLUGIN_LOGS_MANAGEMENT,
     BIB_EXPORT_AWS_KINESIS,
     BIB_EXPORT_GCP_PUBSUB,
     BIB_EXPORT_MONGOC,
@@ -340,7 +343,7 @@ static struct {
                 .json = "cpu_frequency",
                 .value = "unknown",
         },
-        [BIB_HW_RAM_SIZE] = {
+        [BIB_HW_ARCHITECTURE] = {
                 .category = BIC_HARDWARE,
                 .type = BIT_STRING,
                 .analytics = NULL,
@@ -348,7 +351,7 @@ static struct {
                 .json = "cpu_architecture",
                 .value = "unknown",
         },
-        [BIB_HW_DISK_SPACE] = {
+        [BIB_HW_RAM_SIZE] = {
                 .category = BIC_HARDWARE,
                 .type = BIT_STRING,
                 .analytics = NULL,
@@ -356,7 +359,7 @@ static struct {
                 .json = "ram",
                 .value = "unknown",
         },
-        [BIB_HW_ARCHITECTURE] = {
+        [BIB_HW_DISK_SPACE] = {
                 .category = BIC_HARDWARE,
                 .type = BIT_STRING,
                 .analytics = NULL,
@@ -484,6 +487,14 @@ static struct {
                 .json = "streaming",
                 .value = NULL,
         },
+        [BIB_FEATURE_BACKFILLING] = {
+                .category = BIC_FEATURE,
+                .type = BIT_BOOLEAN,
+                .analytics = NULL,
+                .print = "Back-filling (of higher database tiers)",
+                .json = "back-filling",
+                .value = NULL,
+        },
         [BIB_FEATURE_REPLICATION] = {
                 .category = BIC_FEATURE,
                 .type = BIT_BOOLEAN,
@@ -498,7 +509,7 @@ static struct {
                 .analytics = "Stream Compression",
                 .print = "Streaming and Replication Compression",
                 .json = "stream-compression",
-                .value = "none",
+                .value = NULL,
         },
         [BIB_FEATURE_CONTEXTS] = {
                 .category = BIC_FEATURE,
@@ -626,6 +637,14 @@ static struct {
                 .analytics = NULL,
                 .print = "LZ4 (extremely fast lossless compression algorithm)",
                 .json = "lz4",
+                .value = NULL,
+        },
+        [BIB_LIB_ZSTD] = {
+                .category = BIC_LIBS,
+                .type = BIT_BOOLEAN,
+                .analytics = NULL,
+                .print = "ZSTD (fast, lossless compression algorithm)",
+                .json = "zstd",
                 .value = NULL,
         },
         [BIB_LIB_ZLIB] = {
@@ -893,6 +912,14 @@ static struct {
                 .json = "xen-vbd-error",
                 .value = NULL,
         },
+        [BIB_PLUGIN_LOGS_MANAGEMENT] = {
+                .category = BIC_PLUGINS,
+                .type = BIT_BOOLEAN,
+                .analytics = "Logs Management",
+                .print = "Logs Management",
+                .json = "logs-management",
+                .value = NULL,
+        },
         [BIB_EXPORT_MONGOC] = {
                 .category = BIC_EXPORTERS,
                 .type = BIT_BOOLEAN,
@@ -1029,6 +1056,23 @@ static void build_info_set_value(BUILD_INFO_SLOT slot, const char *value) {
     BUILD_INFO[slot].value = value;
 }
 
+static void build_info_append_value(BUILD_INFO_SLOT slot, const char *value) {
+    size_t size = BUILD_INFO[slot].value ? strlen(BUILD_INFO[slot].value) + 1 : 0;
+    size += strlen(value);
+    char buf[size + 1];
+
+    if(BUILD_INFO[slot].value) {
+        strcpy(buf, BUILD_INFO[slot].value);
+        strcat(buf, " ");
+        strcat(buf, value);
+    }
+    else
+        strcpy(buf, value);
+
+    freez((void *)BUILD_INFO[slot].value);
+    BUILD_INFO[slot].value = strdupz(buf);
+}
+
 static void build_info_set_value_strdupz(BUILD_INFO_SLOT slot, const char *value) {
     if(!value) value = "";
     build_info_set_value(slot, strdupz(value));
@@ -1075,14 +1119,21 @@ __attribute__((constructor)) void initialize_build_info(void) {
 
     build_info_set_status(BIB_FEATURE_HEALTH, true);
     build_info_set_status(BIB_FEATURE_STREAMING, true);
+    build_info_set_status(BIB_FEATURE_BACKFILLING, true);
     build_info_set_status(BIB_FEATURE_REPLICATION, true);
 
-#ifdef ENABLE_RRDPUSH_COMPRESSION
     build_info_set_status(BIB_FEATURE_STREAMING_COMPRESSION, true);
+
+#ifdef ENABLE_BROTLI
+    build_info_append_value(BIB_FEATURE_STREAMING_COMPRESSION, "brotli");
+#endif
+#ifdef ENABLE_ZSTD
+    build_info_append_value(BIB_FEATURE_STREAMING_COMPRESSION, "zstd");
+#endif
 #ifdef ENABLE_LZ4
-    build_info_set_value(BIB_FEATURE_STREAMING_COMPRESSION, "lz4");
+    build_info_append_value(BIB_FEATURE_STREAMING_COMPRESSION, "lz4");
 #endif
-#endif
+    build_info_append_value(BIB_FEATURE_STREAMING_COMPRESSION, "gzip");
 
     build_info_set_status(BIB_FEATURE_CONTEXTS, true);
     build_info_set_status(BIB_FEATURE_TIERING, true);
@@ -1116,6 +1167,9 @@ __attribute__((constructor)) void initialize_build_info(void) {
 
 #ifdef ENABLE_LZ4
     build_info_set_status(BIB_LIB_LZ4, true);
+#endif
+#ifdef ENABLE_ZSTD
+    build_info_set_status(BIB_LIB_ZSTD, true);
 #endif
 
     build_info_set_status(BIB_LIB_ZLIB, true);
@@ -1198,6 +1252,9 @@ __attribute__((constructor)) void initialize_build_info(void) {
 #ifdef HAVE_XENSTAT_VBD_ERROR
     build_info_set_status(BIB_PLUGIN_XEN_VBD_ERROR, true);
 #endif
+#ifdef ENABLE_LOGSMANAGEMENT
+    build_info_set_status(BIB_PLUGIN_LOGS_MANAGEMENT, true);
+#endif
 
     build_info_set_status(BIB_EXPORT_PROMETHEUS_EXPORTER, true);
     build_info_set_status(BIB_EXPORT_GRAPHITE, true);
@@ -1234,7 +1291,7 @@ __attribute__((constructor)) void initialize_build_info(void) {
 // ----------------------------------------------------------------------------
 // system info
 
-int get_system_info(struct rrdhost_system_info *system_info, bool log);
+int get_system_info(struct rrdhost_system_info *system_info);
 static void populate_system_info(void) {
     static bool populated = false;
     static SPINLOCK spinlock = NETDATA_SPINLOCK_INITIALIZER;
@@ -1257,7 +1314,7 @@ static void populate_system_info(void) {
     }
     else {
         system_info = callocz(1, sizeof(struct rrdhost_system_info));
-        get_system_info(system_info, false);
+        get_system_info(system_info);
         free_system_info = true;
     }
 

@@ -61,7 +61,6 @@ static bool prepare_command(BUFFER *wb,
                             uint32_t when,
                             const char *alert_name,
                             const char *alert_chart_name,
-                            const char *alert_family,
                             const char *new_status,
                             const char *old_status,
                             NETDATA_DOUBLE new_value,
@@ -82,10 +81,14 @@ static bool prepare_command(BUFFER *wb,
                             const char *classification,
                             const char *edit_command,
                             const char *machine_guid,
-                            uuid_t *transition_id
+                            uuid_t *transition_id,
+                            const char *summary,
+                            const char *context,
+                            const char *component,
+                            const char *type
 ) {
     char buf[8192];
-    size_t n = 8192 - 1;
+    size_t n = sizeof(buf) - 1;
 
     buffer_strcat(wb, "exec");
 
@@ -114,10 +117,6 @@ static bool prepare_command(BUFFER *wb,
     buffer_sprintf(wb, " '%s'", buf);
 
     if (!sanitize_command_argument_string(buf, alert_chart_name, n))
-        return false;
-    buffer_sprintf(wb, " '%s'", buf);
-
-    if (!sanitize_command_argument_string(buf, alert_family, n))
         return false;
     buffer_sprintf(wb, " '%s'", buf);
 
@@ -192,6 +191,22 @@ static bool prepare_command(BUFFER *wb,
     char tr_id[UUID_STR_LEN];
     uuid_unparse_lower(*transition_id, tr_id);
     if (!sanitize_command_argument_string(buf, tr_id, n))
+        return false;
+    buffer_sprintf(wb, " '%s'", buf);
+
+    if (!sanitize_command_argument_string(buf, summary, n))
+        return false;
+    buffer_sprintf(wb, " '%s'", buf);
+
+    if (!sanitize_command_argument_string(buf, context, n))
+        return false;
+    buffer_sprintf(wb, " '%s'", buf);
+
+    if (!sanitize_command_argument_string(buf, component, n))
+        return false;
+    buffer_sprintf(wb, " '%s'", buf);
+
+    if (!sanitize_command_argument_string(buf, type, n))
         return false;
     buffer_sprintf(wb, " '%s'", buf);
 
@@ -342,7 +357,9 @@ static void health_reload_host(RRDHOST *host) {
     if(unlikely(!host->health.health_enabled) && !rrdhost_flag_check(host, RRDHOST_FLAG_INITIALIZED_HEALTH))
         return;
 
-    netdata_log_health("[%s]: Reloading health.", rrdhost_hostname(host));
+    nd_log(NDLS_DAEMON, NDLP_DEBUG,
+           "[%s]: Reloading health.",
+           rrdhost_hostname(host));
 
     char *user_path = health_user_config_dir();
     char *stock_path = health_stock_config_dir();
@@ -376,9 +393,6 @@ static void health_reload_host(RRDHOST *host) {
 
     // link the loaded alarms to their charts
     rrdset_foreach_write(st, host) {
-        if (rrdset_flag_check(st, RRDSET_FLAG_ARCHIVED))
-            continue;
-
         rrdcalc_link_matching_alerts_to_rrdset(st);
         rrdcalctemplate_link_matching_templates_to_rrdset(st);
     }
@@ -386,7 +400,7 @@ static void health_reload_host(RRDHOST *host) {
 
 #ifdef ENABLE_ACLK
     if (netdata_cloud_enabled) {
-        struct aclk_sync_host_config *wc = (struct aclk_sync_host_config *)host->aclk_sync_host_config;
+        struct aclk_sync_cfg_t *wc = host->aclk_config;
         if (likely(wc)) {
             wc->alert_queue_removed = SEND_REMOVED_AFTER_HEALTH_LOOPS;
         }
@@ -425,7 +439,7 @@ static inline int compare_active_alerts(const void * a, const void * b) {
     active_alerts_t *active_alerts_a = (active_alerts_t *)a;
     active_alerts_t *active_alerts_b = (active_alerts_t *)b;
 
-    return ( active_alerts_b->last_status_change - active_alerts_a->last_status_change );
+    return (int) ( active_alerts_b->last_status_change - active_alerts_a->last_status_change );
 }
 
 static inline void health_alarm_execute(RRDHOST *host, ALARM_ENTRY *ae) {
@@ -439,8 +453,10 @@ static inline void health_alarm_execute(RRDHOST *host, ALARM_ENTRY *ae) {
 
     if(unlikely(ae->new_status <= RRDCALC_STATUS_CLEAR && (ae->flags & HEALTH_ENTRY_FLAG_NO_CLEAR_NOTIFICATION))) {
         // do not send notifications for disabled statuses
-        netdata_log_debug(D_HEALTH, "Health not sending notification for alarm '%s.%s' status %s (it has no-clear-notification enabled)", ae_chart_id(ae), ae_name(ae), rrdcalc_status2string(ae->new_status));
-        netdata_log_health("[%s]: Health not sending notification for alarm '%s.%s' status %s (it has no-clear-notification enabled)", rrdhost_hostname(host), ae_chart_id(ae), ae_name(ae), rrdcalc_status2string(ae->new_status));
+
+        nd_log(NDLS_DAEMON, NDLP_DEBUG,
+               "[%s]: Health not sending notification for alarm '%s.%s' status %s (it has no-clear-notification enabled)",
+               rrdhost_hostname(host), ae_chart_id(ae), ae_name(ae), rrdcalc_status2string(ae->new_status));
 
         // mark it as run, so that we will send the same alarm if it happens again
         goto done;
@@ -457,10 +473,10 @@ static inline void health_alarm_execute(RRDHOST *host, ALARM_ENTRY *ae) {
             // we have executed this alarm notification in the past
             if(last_executed_status == ae->new_status && !(ae->flags & HEALTH_ENTRY_FLAG_IS_REPEATING)) {
                 // don't send the notification for the same status again
-                netdata_log_debug(D_HEALTH, "Health not sending again notification for alarm '%s.%s' status %s", ae_chart_id(ae), ae_name(ae)
-                      , rrdcalc_status2string(ae->new_status));
-                netdata_log_health("[%s]: Health not sending again notification for alarm '%s.%s' status %s", rrdhost_hostname(host), ae_chart_id(ae), ae_name(ae)
-                      , rrdcalc_status2string(ae->new_status));
+                nd_log(NDLS_DAEMON, NDLP_DEBUG,
+                       "[%s]: Health not sending again notification for alarm '%s.%s' status %s",
+                       rrdhost_hostname(host), ae_chart_id(ae), ae_name(ae),
+                       rrdcalc_status2string(ae->new_status));
                 goto done;
             }
         }
@@ -479,11 +495,16 @@ static inline void health_alarm_execute(RRDHOST *host, ALARM_ENTRY *ae) {
 
     // Check if alarm notifications are silenced
     if (ae->flags & HEALTH_ENTRY_FLAG_SILENCED) {
-        netdata_log_health("[%s]: Health not sending notification for alarm '%s.%s' status %s (command API has disabled notifications)", rrdhost_hostname(host), ae_chart_id(ae), ae_name(ae), rrdcalc_status2string(ae->new_status));
+        nd_log(NDLS_DAEMON, NDLP_DEBUG,
+               "[%s]: Health not sending notification for alarm '%s.%s' status %s "
+               "(command API has disabled notifications)",
+               rrdhost_hostname(host), ae_chart_id(ae), ae_name(ae), rrdcalc_status2string(ae->new_status));
         goto done;
     }
 
-    netdata_log_health("[%s]: Sending notification for alarm '%s.%s' status %s.", rrdhost_hostname(host), ae_chart_id(ae), ae_name(ae), rrdcalc_status2string(ae->new_status));
+    nd_log(NDLS_DAEMON, NDLP_DEBUG,
+           "[%s]: Sending notification for alarm '%s.%s' status %s.",
+           rrdhost_hostname(host), ae_chart_id(ae), ae_name(ae), rrdcalc_status2string(ae->new_status));
 
     const char *exec      = (ae->exec)      ? ae_exec(ae)      : string2str(host->health.health_default_exec);
     const char *recipient = (ae->recipient) ? ae_recipient(ae) : string2str(host->health.health_default_recipient);
@@ -563,7 +584,6 @@ static inline void health_alarm_execute(RRDHOST *host, ALARM_ENTRY *ae) {
                               (unsigned long)ae->when,
                               ae_name(ae),
                               ae->chart?ae_chart_id(ae):"NOCHART",
-                              ae->family?ae_family(ae):"NOFAMILY",
                               rrdcalc_status2string(ae->new_status),
                               rrdcalc_status2string(ae->old_status),
                               ae->new_value,
@@ -584,7 +604,12 @@ static inline void health_alarm_execute(RRDHOST *host, ALARM_ENTRY *ae) {
                               ae->classification?ae_classification(ae):"Unknown",
                               edit_command,
                               host->machine_guid,
-                              &ae->transition_id);
+                              &ae->transition_id,
+                              host->health.use_summary_for_notifications && ae->summary?ae_summary(ae):ae_name(ae),
+                              string2str(ae->chart_context),
+                              string2str(ae->component),
+                              string2str(ae->type)
+                              );
 
     const char *command_to_run = buffer_tostring(wb);
     if (ok) {
@@ -724,11 +749,6 @@ static inline int rrdcalc_isrunnable(RRDCALC *rc, time_t now, time_t *next_run) 
         return 0;
     }
 
-    if(unlikely(rrdset_flag_check(rc->rrdset, RRDSET_FLAG_ARCHIVED))) {
-        netdata_log_debug(D_HEALTH, "Health not running alarm '%s.%s'. The chart has been marked as archived", rrdcalc_chart_name(rc), rrdcalc_name(rc));
-        return 0;
-    }
-
     if(unlikely(!rc->rrdset->last_collected_time.tv_sec || rc->rrdset->counter_done < 2)) {
         netdata_log_debug(D_HEALTH, "Health not running alarm '%s.%s'. Chart is not fully collected yet.", rrdcalc_chart_name(rc), rrdcalc_name(rc));
         return 0;
@@ -786,7 +806,8 @@ static void health_main_cleanup(void *ptr) {
     netdata_log_info("cleaning up...");
     static_thread->enabled = NETDATA_MAIN_THREAD_EXITED;
 
-    netdata_log_health("Health thread ended.");
+    nd_log(NDLS_DAEMON, NDLP_DEBUG,
+           "Health thread ended.");
 }
 
 static void initialize_health(RRDHOST *host)
@@ -798,7 +819,9 @@ static void initialize_health(RRDHOST *host)
 
     rrdhost_flag_set(host, RRDHOST_FLAG_INITIALIZED_HEALTH);
 
-    netdata_log_health("[%s]: Initializing health.", rrdhost_hostname(host));
+    nd_log(NDLS_DAEMON, NDLP_DEBUG,
+           "[%s]: Initializing health.",
+           rrdhost_hostname(host));
 
     host->health.health_default_warn_repeat_every = config_get_duration(CONFIG_SECTION_HEALTH, "default repeat warning", "never");
     host->health.health_default_crit_repeat_every = config_get_duration(CONFIG_SECTION_HEALTH, "default repeat critical", "never");
@@ -811,7 +834,11 @@ static void initialize_health(RRDHOST *host)
 
     long n = config_get_number(CONFIG_SECTION_HEALTH, "in memory max health log entries", host->health_log.max);
     if(n < 10) {
-        netdata_log_health("Host '%s': health configuration has invalid max log entries %ld. Using default %u", rrdhost_hostname(host), n, host->health_log.max);
+        nd_log(NDLS_DAEMON, NDLP_WARNING,
+               "Host '%s': health configuration has invalid max log entries %ld. "
+               "Using default %u",
+               rrdhost_hostname(host), n, host->health_log.max);
+
         config_set_number(CONFIG_SECTION_HEALTH, "in memory max health log entries", (long)host->health_log.max);
     }
     else
@@ -819,7 +846,11 @@ static void initialize_health(RRDHOST *host)
 
     uint32_t m = config_get_number(CONFIG_SECTION_HEALTH, "health log history", HEALTH_LOG_DEFAULT_HISTORY);
     if (m < HEALTH_LOG_MINIMUM_HISTORY) {
-        netdata_log_health("Host '%s': health configuration has invalid health log history %u. Using minimum %d", rrdhost_hostname(host), m, HEALTH_LOG_MINIMUM_HISTORY);
+        nd_log(NDLS_DAEMON, NDLP_WARNING,
+               "Host '%s': health configuration has invalid health log history %u. "
+               "Using minimum %d",
+               rrdhost_hostname(host), m, HEALTH_LOG_MINIMUM_HISTORY);
+
         config_set_number(CONFIG_SECTION_HEALTH, "health log history", HEALTH_LOG_MINIMUM_HISTORY);
         m = HEALTH_LOG_MINIMUM_HISTORY;
     }
@@ -831,7 +862,9 @@ static void initialize_health(RRDHOST *host)
     } else
         host->health_log.health_log_history = m;
 
-    netdata_log_health("[%s]: Health log history is set to %u seconds (%u days)", rrdhost_hostname(host), host->health_log.health_log_history, host->health_log.health_log_history / 86400);
+    nd_log(NDLS_DAEMON, NDLP_DEBUG,
+           "[%s]: Health log history is set to %u seconds (%u days)",
+           rrdhost_hostname(host), host->health_log.health_log_history, host->health_log.health_log_history / 86400);
 
     conf_enabled_alarms = simple_pattern_create(config_get(CONFIG_SECTION_HEALTH, "enabled alarms", "*"), NULL,
                                                 SIMPLE_PATTERN_EXACT, true);
@@ -843,9 +876,7 @@ static void initialize_health(RRDHOST *host)
     snprintfz(filename, FILENAME_MAX, "%s/alarm-notify.sh", netdata_configured_primary_plugins_dir);
     host->health.health_default_exec = string_strdupz(config_get(CONFIG_SECTION_HEALTH, "script to execute on alarm", filename));
     host->health.health_default_recipient = string_strdupz("root");
-
-    //if (!is_chart_name_populated(&host->host_uuid))
-    //    chart_name_populate(&host->host_uuid);
+    host->health.use_summary_for_notifications = config_get_boolean(CONFIG_SECTION_HEALTH, "use summary for notifications", CONFIG_BOOLEAN_YES);
 
     sql_health_alarm_log_load(host);
 
@@ -857,9 +888,6 @@ static void initialize_health(RRDHOST *host)
     // link the loaded alarms to their charts
     RRDSET *st;
     rrdset_foreach_reentrant(st, host) {
-        if (rrdset_flag_check(st, RRDSET_FLAG_ARCHIVED))
-            continue;
-
         rrdcalc_link_matching_alerts_to_rrdset(st);
         rrdcalctemplate_link_matching_templates_to_rrdset(st);
     }
@@ -884,30 +912,27 @@ static void health_sleep(time_t next_run, unsigned int loop __maybe_unused) {
     }
 }
 
-static SILENCE_TYPE check_silenced(RRDCALC *rc, const char *host, SILENCERS *silencers) {
+static SILENCE_TYPE check_silenced(RRDCALC *rc, const char *host)
+{
     SILENCER *s;
-    netdata_log_debug(D_HEALTH, "Checking if alarm was silenced via the command API. Alarm info name:%s context:%s chart:%s host:%s family:%s",
-          rrdcalc_name(rc), (rc->rrdset)?rrdset_context(rc->rrdset):"", rrdcalc_chart_name(rc), host, (rc->rrdset)?rrdset_family(rc->rrdset):"");
 
     for (s = silencers->silencers; s!=NULL; s=s->next){
         if (
                 (!s->alarms_pattern || (rc->name && s->alarms_pattern && simple_pattern_matches_string(s->alarms_pattern, rc->name))) &&
                 (!s->contexts_pattern || (rc->rrdset && rc->rrdset->context && s->contexts_pattern && simple_pattern_matches_string(s->contexts_pattern, rc->rrdset->context))) &&
                 (!s->hosts_pattern || (host && s->hosts_pattern && simple_pattern_matches(s->hosts_pattern, host))) &&
-                (!s->charts_pattern || (rc->chart && s->charts_pattern && simple_pattern_matches_string(s->charts_pattern, rc->chart))) &&
-                (!s->families_pattern || (rc->rrdset && rc->rrdset->family && s->families_pattern && simple_pattern_matches_string(s->families_pattern, rc->rrdset->family)))
+                (!s->charts_pattern || (rc->chart && s->charts_pattern && simple_pattern_matches_string(s->charts_pattern, rc->chart)))
                 ) {
-            netdata_log_debug(D_HEALTH, "Alarm matches command API silence entry %s:%s:%s:%s:%s", s->alarms,s->charts, s->contexts, s->hosts, s->families);
+            netdata_log_debug(D_HEALTH, "Alarm matches command API silence entry %s:%s:%s:%s", s->alarms,s->charts, s->contexts, s->hosts);
             if (unlikely(silencers->stype == STYPE_NONE)) {
                 netdata_log_debug(D_HEALTH, "Alarm %s matched a silence entry, but no SILENCE or DISABLE command was issued via the command API. The match has no effect.", rrdcalc_name(rc));
             } else {
-                netdata_log_debug(D_HEALTH, "Alarm %s via the command API - name:%s context:%s chart:%s host:%s family:%s"
+                netdata_log_debug(D_HEALTH, "Alarm %s via the command API - name:%s context:%s chart:%s host:%s"
                         , (silencers->stype == STYPE_DISABLE_ALARMS)?"Disabled":"Silenced"
                         , rrdcalc_name(rc)
                         , (rc->rrdset)?rrdset_context(rc->rrdset):""
                         , rrdcalc_chart_name(rc)
                         , host
-                        , (rc->rrdset)?rrdset_family(rc->rrdset):""
                         );
             }
             return silencers->stype;
@@ -934,20 +959,20 @@ static int update_disabled_silenced(RRDHOST *host, RRDCALC *rc) {
         if (silencers->stype == STYPE_DISABLE_ALARMS) rc->run_flags |= RRDCALC_FLAG_DISABLED;
         else if (silencers->stype == STYPE_SILENCE_NOTIFICATIONS) rc->run_flags |= RRDCALC_FLAG_SILENCED;
     } else {
-        SILENCE_TYPE st = check_silenced(rc, rrdhost_hostname(host), silencers);
+        SILENCE_TYPE st = check_silenced(rc, rrdhost_hostname(host));
         if (st == STYPE_DISABLE_ALARMS) rc->run_flags |= RRDCALC_FLAG_DISABLED;
         else if (st == STYPE_SILENCE_NOTIFICATIONS) rc->run_flags |= RRDCALC_FLAG_SILENCED;
     }
 
     if (rrdcalc_flags_old != rc->run_flags) {
-        netdata_log_info("Alarm silencing changed for host '%s' alarm '%s': Disabled %s->%s Silenced %s->%s",
-             rrdhost_hostname(host),
-             rrdcalc_name(rc),
-             (rrdcalc_flags_old & RRDCALC_FLAG_DISABLED)?"true":"false",
-             (rc->run_flags & RRDCALC_FLAG_DISABLED)?"true":"false",
-             (rrdcalc_flags_old & RRDCALC_FLAG_SILENCED)?"true":"false",
-             (rc->run_flags & RRDCALC_FLAG_SILENCED)?"true":"false"
-        );
+        netdata_log_info(
+            "Alarm silencing changed for host '%s' alarm '%s': Disabled %s->%s Silenced %s->%s",
+            rrdhost_hostname(host),
+            rrdcalc_name(rc),
+            (rrdcalc_flags_old & RRDCALC_FLAG_DISABLED) ? "true" : "false",
+            (rc->run_flags & RRDCALC_FLAG_DISABLED) ? "true" : "false",
+            (rrdcalc_flags_old & RRDCALC_FLAG_SILENCED) ? "true" : "false",
+            (rc->run_flags & RRDCALC_FLAG_SILENCED) ? "true" : "false");
     }
     if (rc->run_flags & RRDCALC_FLAG_DISABLED)
         return 1;
@@ -958,7 +983,7 @@ static int update_disabled_silenced(RRDHOST *host, RRDCALC *rc) {
 static void sql_health_postpone_queue_removed(RRDHOST *host __maybe_unused) {
 #ifdef ENABLE_ACLK
     if (netdata_cloud_enabled) {
-        struct aclk_sync_host_config *wc = (struct aclk_sync_host_config *)host->aclk_sync_host_config;
+        struct aclk_sync_cfg_t *wc = host->aclk_config;
         if (unlikely(!wc)) {
             return;
         }
@@ -1064,7 +1089,7 @@ void *health_main(void *ptr) {
         if (unlikely(check_if_resumed_from_suspension())) {
             apply_hibernation_delay = 1;
 
-            netdata_log_health(
+            nd_log(NDLS_DAEMON, NDLP_NOTICE,
                        "Postponing alarm checks for %"PRId64" seconds, "
                        "because it seems that the system was just resumed from suspension.",
                        (int64_t)hibernation_delay);
@@ -1073,8 +1098,9 @@ void *health_main(void *ptr) {
         if (unlikely(silencers->all_alarms && silencers->stype == STYPE_DISABLE_ALARMS)) {
             static int logged=0;
             if (!logged) {
-                netdata_log_health("Skipping health checks, because all alarms are disabled via a %s command.",
-                           HEALTH_CMDAPI_CMD_DISABLEALL);
+                nd_log(NDLS_DAEMON, NDLP_DEBUG,
+                       "Skipping health checks, because all alarms are disabled via a %s command.",
+                       HEALTH_CMDAPI_CMD_DISABLEALL);
                 logged = 1;
             }
         }
@@ -1096,7 +1122,7 @@ void *health_main(void *ptr) {
             rrdcalc_delete_alerts_not_matching_host_labels_from_this_host(host);
 
             if (unlikely(apply_hibernation_delay)) {
-                netdata_log_health(
+                nd_log(NDLS_DAEMON, NDLP_DEBUG,
                            "[%s]: Postponing health checks for %"PRId64" seconds.",
                            rrdhost_hostname(host),
                            (int64_t)hibernation_delay);
@@ -1109,20 +1135,30 @@ void *health_main(void *ptr) {
                     continue;
                 }
 
-                netdata_log_health("[%s]: Resuming health checks after delay.", rrdhost_hostname(host));
+                nd_log(NDLS_DAEMON, NDLP_DEBUG,
+                       "[%s]: Resuming health checks after delay.",
+                       rrdhost_hostname(host));
+
                 host->health.health_delay_up_to = 0;
             }
 
             // wait until cleanup of obsolete charts on children is complete
             if (host != localhost) {
                 if (unlikely(host->trigger_chart_obsoletion_check == 1)) {
-                    netdata_log_health("[%s]: Waiting for chart obsoletion check.", rrdhost_hostname(host));
+
+                    nd_log(NDLS_DAEMON, NDLP_DEBUG,
+                           "[%s]: Waiting for chart obsoletion check.",
+                           rrdhost_hostname(host));
+
                     continue;
                 }
             }
 
             if (!health_running_logged) {
-                netdata_log_health("[%s]: Health is running.", rrdhost_hostname(host));
+                nd_log(NDLS_DAEMON, NDLP_DEBUG,
+                       "[%s]: Health is running.",
+                       rrdhost_hostname(host));
+
                 health_running_logged = true;
             }
 
@@ -1158,7 +1194,6 @@ void *health_main(void *ptr) {
                                                                     rc->rrdset->id,
                                                                     rc->rrdset->context,
                                                                     rc->rrdset->name,
-                                                                    rc->rrdset->family,
                                                                     rc->classification,
                                                                     rc->component,
                                                                     rc->type,
@@ -1171,11 +1206,13 @@ void *health_main(void *ptr) {
                                                                     RRDCALC_STATUS_REMOVED,
                                                                     rc->source,
                                                                     rc->units,
+                                                                    rc->summary,
                                                                     rc->info,
                                                                     0,
                                                                     rrdcalc_isrepeating(rc)?HEALTH_ENTRY_FLAG_IS_REPEATING:0);
 
                         if (ae) {
+                            health_log_alert(host, ae);
                             health_alarm_log_add_entry(host, ae);
                             rc->old_status = rc->status;
                             rc->status = RRDCALC_STATUS_REMOVED;
@@ -1187,7 +1224,7 @@ void *health_main(void *ptr) {
 
 #ifdef ENABLE_ACLK
                             if (netdata_cloud_enabled)
-                                sql_queue_alarm_to_aclk(host, ae, 1);
+                                sql_queue_alarm_to_aclk(host, ae, true);
 #endif
                         }
                     }
@@ -1214,7 +1251,7 @@ void *health_main(void *ptr) {
 
                     int ret = rrdset2value_api_v1(rc->rrdset, NULL, &rc->value, rrdcalc_dimensions(rc), 1,
                                                   rc->after, rc->before, rc->group, NULL,
-                                                  0, rc->options,
+                                                  0, rc->options | RRDR_OPTION_SELECTED_TIER,
                                                   &rc->db_after,&rc->db_before,
                                                   NULL, NULL, NULL,
                                                   &value_is_null, NULL, 0, 0,
@@ -1425,7 +1462,6 @@ void *health_main(void *ptr) {
                                                                     rc->rrdset->id,
                                                                     rc->rrdset->context,
                                                                     rc->rrdset->name,
-                                                                    rc->rrdset->family,
                                                                     rc->classification,
                                                                     rc->component,
                                                                     rc->type,
@@ -1438,6 +1474,7 @@ void *health_main(void *ptr) {
                                                                     status,
                                                                     rc->source,
                                                                     rc->units,
+                                                                    rc->summary,
                                                                     rc->info,
                                                                     rc->delay_last,
                                                                     (
@@ -1447,9 +1484,13 @@ void *health_main(void *ptr) {
                                                                      )
                                                                     );
 
+                        health_log_alert(host, ae);
                         health_alarm_log_add_entry(host, ae);
 
-                        netdata_log_health("[%s]: Alert event for [%s.%s], value [%s], status [%s].", rrdhost_hostname(host), ae_chart_id(ae), ae_name(ae), ae_new_value_string(ae), rrdcalc_status2string(ae->new_status));
+                        nd_log(NDLS_DAEMON, NDLP_DEBUG,
+                               "[%s]: Alert event for [%s.%s], value [%s], status [%s].",
+                               rrdhost_hostname(host), ae_chart_id(ae), ae_name(ae), ae_new_value_string(ae),
+                               rrdcalc_status2string(ae->new_status));
 
                         rc->last_status_change_value = rc->value;
                         rc->last_status_change = now;
@@ -1512,7 +1553,6 @@ void *health_main(void *ptr) {
                                                                     rc->rrdset->id,
                                                                     rc->rrdset->context,
                                                                     rc->rrdset->name,
-                                                                    rc->rrdset->family,
                                                                     rc->classification,
                                                                     rc->component,
                                                                     rc->type,
@@ -1525,6 +1565,7 @@ void *health_main(void *ptr) {
                                                                     rc->status,
                                                                     rc->source,
                                                                     rc->units,
+                                                                    rc->summary,
                                                                     rc->info,
                                                                     rc->delay_last,
                                                                     (
@@ -1534,6 +1575,7 @@ void *health_main(void *ptr) {
                                                                      )
                                                                     );
 
+                        health_log_alert(host, ae);
                         ae->last_repeat = rc->last_repeat;
                         if (!(rc->run_flags & RRDCALC_FLAG_RUN_ONCE) && rc->status == RRDCALC_STATUS_CLEAR) {
                             ae->flags |= HEALTH_ENTRY_RUN_ONCE;
@@ -1569,10 +1611,9 @@ void *health_main(void *ptr) {
             }
 #ifdef ENABLE_ACLK
             if (netdata_cloud_enabled) {
-                struct aclk_sync_host_config *wc = (struct aclk_sync_host_config *)host->aclk_sync_host_config;
-                if (unlikely(!wc)) {
+                struct aclk_sync_cfg_t *wc = host->aclk_config;
+                if (unlikely(!wc))
                     continue;
-                }
 
                 if (wc->alert_queue_removed == 1) {
                     sql_queue_removed_alerts_to_aclk(host);
@@ -1609,17 +1650,3 @@ void *health_main(void *ptr) {
     netdata_thread_cleanup_pop(1);
     return NULL;
 }
-
-void health_add_host_labels(void) {
-    DICTIONARY *labels = localhost->rrdlabels;
-
-    // The source should be CONF, but when it is set, these labels are exported by default ('send configured labels' in exporting.conf).
-    // Their export seems to break exporting to Graphite, see https://github.com/netdata/netdata/issues/14084.
-
-    int is_ephemeral = appconfig_get_boolean(&netdata_config, CONFIG_SECTION_HEALTH, "is ephemeral", CONFIG_BOOLEAN_NO);
-    rrdlabels_add(labels, "_is_ephemeral", is_ephemeral ? "true" : "false", RRDLABEL_SRC_AUTO);
-
-    int has_unstable_connection = appconfig_get_boolean(&netdata_config, CONFIG_SECTION_HEALTH, "has unstable connection", CONFIG_BOOLEAN_NO);
-    rrdlabels_add(labels, "_has_unstable_connection", has_unstable_connection ? "true" : "false", RRDLABEL_SRC_AUTO);
-}
-
